@@ -260,6 +260,7 @@ pub struct Store {
     pub evicted_keys: AtomicU64,
     pub evict_config: RwLock<EvictionConfig>,
     pub watchers: DashMap<Bytes, Vec<std::sync::mpsc::Sender<()>>>,
+    pub dirty_count: AtomicU64,
 }
 
 impl Store {
@@ -269,6 +270,7 @@ impl Store {
             evicted_keys: AtomicU64::new(0),
             evict_config: RwLock::new(EvictionConfig::default()),
             watchers: DashMap::new(),
+            dirty_count: AtomicU64::new(0),
         });
         let store_weak = Arc::downgrade(&store);
         tokio::spawn(async move {
@@ -303,16 +305,25 @@ impl Store {
         self.notify_watchers(&key);
         let entry = Entry::new(data, ttl);
         self.keyspace.insert(key, entry);
+        self.dirty_count.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn del(&self, key: &Bytes) -> bool {
         self.notify_watchers(key);
-        self.keyspace.remove(key).is_some()
+        let result = self.keyspace.remove(key).is_some();
+        if result {
+            self.dirty_count.fetch_add(1, Ordering::Relaxed);
+        }
+        result
     }
 
     pub fn expire(&self, key: &Bytes, at: Instant) -> bool {
         self.notify_watchers(key);
-        self.keyspace.get_mut(key).map(|mut e| { e.expires_at = Some(at); }).is_some()
+        let result = self.keyspace.get_mut(key).map(|mut e| { e.expires_at = Some(at); }).is_some();
+        if result {
+            self.dirty_count.fetch_add(1, Ordering::Relaxed);
+        }
+        result
     }
 
     pub fn exists(&self, key: &Bytes) -> bool {
@@ -473,6 +484,10 @@ impl Store {
     }
 
     pub fn evicted_count(&self) -> u64 { self.evicted_keys.load(Ordering::Relaxed) }
+
+    pub fn dirty_count(&self) -> u64 { self.dirty_count.load(Ordering::Relaxed) }
+
+    pub fn reset_dirty_count(&self) -> u64 { self.dirty_count.swap(0, Ordering::Relaxed) }
 }
 
 impl Deref for Store {
@@ -489,6 +504,8 @@ mod tests {
             keyspace: DashMap::new(),
             evicted_keys: AtomicU64::new(0),
             evict_config: RwLock::new(EvictionConfig::default()),
+            watchers: DashMap::new(),
+            dirty_count: AtomicU64::new(0),
         })
     }
 
