@@ -12,6 +12,7 @@ pub mod hash;
 pub mod set;
 pub mod pubsub;
 pub mod transaction;
+pub mod acl;
 
 pub type Db = Arc<Store>;
 
@@ -64,6 +65,16 @@ pub async fn dispatch_ctx(cmd: Vec<Bytes>, store: Db, ctx: &CommandCtx) -> RespV
         }
     }
 
+    // ACL permission check (skip for ACL/AUTH/transaction commands to avoid deadlock)
+    let is_acl_or_auth = matches!(name.as_str(), "ACL" | "AUTH");
+    if !is_transaction_cmd && !is_acl_or_auth {
+        let client_guard = ctx.client.read().unwrap();
+        let keys: Vec<Bytes> = args.to_vec();
+        if let Err(reason) = acl::check_permission(&client_guard, &name, &keys) {
+            return RespValue::Error(reason.into());
+        }
+    }
+
     match name.as_str() {
         "PING" | "ECHO" | "SELECT" | "DBSIZE" | "FLUSHDB" | "FLUSHALL"
         | "INFO" | "COMMAND" | "CONFIG" | "SAVE" | "BGSAVE" | "BGREWRITEAOF"
@@ -104,6 +115,12 @@ pub async fn dispatch_ctx(cmd: Vec<Bytes>, store: Db, ctx: &CommandCtx) -> RespV
         "MULTI" | "EXEC" | "DISCARD" | "WATCH" | "UNWATCH" => {
             transaction::handle(&cmd, &store, ctx.client.clone()).await
                 .unwrap_or_else(|| RespValue::Error("ERR internal error".into()))
+        }
+        "ACL" => {
+            acl::handle(args, ctx.client.clone()).await
+        }
+        "AUTH" => {
+            acl::cmd_auth(args, ctx.client.clone()).await
         }
         _ => {
             let r = match name.as_str() {

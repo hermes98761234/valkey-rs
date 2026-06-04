@@ -1,11 +1,24 @@
 use bytes::Bytes;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use valkey_proto::RespValue;
 use valkey_storage::Store;
+
+// ---------------------------------------------------------------------------
+// TLS client authentication mode
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Default, PartialEq)]
+pub enum TlsClientAuth {
+    #[default]
+    No,
+    Yes,
+    Optional,
+}
 
 // ---------------------------------------------------------------------------
 // Client context — tracks per-connection state
@@ -56,6 +69,14 @@ impl ClientCtx {
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
     params: HashMap<String, String>,
+    // TLS configuration
+    pub tls_port: Option<u16>,
+    pub tls_cert_file: Option<PathBuf>,
+    pub tls_key_file: Option<PathBuf>,
+    pub tls_ca_cert_file: Option<PathBuf>,
+    pub tls_auth_clients: TlsClientAuth,
+    // RDB persistence
+    pub rdb_path: String,
 }
 
 impl Default for ServerConfig {
@@ -74,7 +95,17 @@ impl Default for ServerConfig {
         params.insert("hz".into(), "10".into());
         params.insert("proto-max-bulk-len".into(), "536870912".into());
         params.insert("client-query-buffer-limit".into(), "1073741824".into());
-        Self { params }
+        params.insert("dbfilename".into(), "dump.rdb".into());
+        params.insert("dir".into(), ".".into());
+        Self {
+            params,
+            tls_port: None,
+            tls_cert_file: None,
+            tls_key_file: None,
+            tls_ca_cert_file: None,
+            tls_auth_clients: TlsClientAuth::No,
+            rdb_path: "./dump.rdb".into(),
+        }
     }
 }
 
@@ -180,8 +211,8 @@ pub async fn handle(
         "INFO" => cmd_info(&args[1..]).await,
         "COMMAND" => cmd_command(&args[1..], store, _client, config).await,
         "CONFIG" => cmd_config(&args[1..], config, store).await,
-        "SAVE" => cmd_save(&args[1..]).await,
-        "BGSAVE" => cmd_bgsave(&args[1..]).await,
+        "SAVE" => cmd_save(&args[1..], store, config).await,
+        "BGSAVE" => cmd_bgsave(&args[1..], &store, config).await,
         "BGREWRITEAOF" => cmd_bgrewriteaof(&args[1..]).await,
         "LASTSAVE" => cmd_lastsave(&args[1..]).await,
         "TIME" => cmd_time(&args[1..]).await,
@@ -1013,12 +1044,23 @@ async fn cmd_config_help(_args: &[Bytes]) -> RespValue {
 // SAVE
 // ---------------------------------------------------------------------------
 
-async fn cmd_save(_args: &[Bytes]) -> RespValue {
-    // Persistence hooks will be added later
-    RespValue::ok()
+async fn cmd_save(args: &[Bytes], store: &Arc<Store>, config: Arc<RwLock<ServerConfig>>) -> RespValue {
+    if !args.is_empty() {
+        return RespValue::Error("ERR wrong number of arguments for 'save' command".into());
+    }
+    let path = config.read().unwrap().rdb_path.clone();
+    match valkey_persistence::rdb::save(store, std::path::Path::new(&path)).await {
+        Ok(()) => RespValue::ok(),
+        Err(e) => RespValue::Error(format!("ERR {}", e)),
+    }
 }
 
-async fn cmd_bgsave(_args: &[Bytes]) -> RespValue {
+async fn cmd_bgsave(args: &[Bytes], store: &Arc<Store>, config: Arc<RwLock<ServerConfig>>) -> RespValue {
+    if !args.is_empty() {
+        return RespValue::Error("ERR wrong number of arguments for 'bgsave' command".into());
+    }
+    let path = config.read().unwrap().rdb_path.clone();
+    valkey_persistence::rdb::bgsave(Arc::clone(store), std::path::PathBuf::from(path)).await;
     RespValue::SimpleString("Background saving started".into())
 }
 

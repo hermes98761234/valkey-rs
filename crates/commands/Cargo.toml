@@ -10,6 +10,8 @@ thiserror = { workspace = true }
 valkey-proto = { path = "../proto" }
 valkey-storage = { path = "../storage" }
 valkey-pubsub = { path = "../pubsub" }
+valkey-persistence = { path = "../persistence" }
+valkey-scripting = { path = "../scripting" }
 dashmap = { workspace = true }
 fastrand = "2"
 rand = "0.8"
