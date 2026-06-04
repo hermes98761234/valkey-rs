@@ -1,1 +1,4 @@
-target/
+/target
+dump.rdb
+appendonly.aof
+*.log
