@@ -1,3 +1,22 @@
+#![allow(
+    clippy::manual_is_multiple_of,
+    clippy::unwrap_or_default,
+    clippy::redundant_closure,
+    clippy::unnecessary_to_owned,
+    clippy::useless_conversion,
+    clippy::needless_return,
+    clippy::match_single_binding,
+    clippy::needless_borrow,
+    clippy::field_reassign_with_default,
+    clippy::new_without_default,
+    clippy::should_implement_trait,
+    clippy::len_zero,
+    clippy::unused_self,
+    dead_code,
+    unused_imports,
+    unused_mut,
+    unused_variables
+)]
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::fmt;
 use std::ops::Deref;
@@ -6,8 +25,8 @@ use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
-use dashmap::DashMap;
 use dashmap::mapref::one::Ref;
+use dashmap::DashMap;
 use ordered_float::OrderedFloat;
 
 #[derive(Debug, Clone)]
@@ -27,14 +46,18 @@ pub struct ZSetData {
 }
 
 impl ZSetData {
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
 
     pub fn add(&mut self, member: Bytes, score: f64) {
         let score = OrderedFloat(score);
         if let Some(old_score) = self.members.get(&member) {
             if let Some(bucket) = self.scores.get_mut(old_score) {
                 bucket.remove(&member);
-                if bucket.is_empty() { self.scores.remove(old_score); }
+                if bucket.is_empty() {
+                    self.scores.remove(old_score);
+                }
             }
         }
         self.members.insert(member.clone(), score);
@@ -45,8 +68,12 @@ impl ZSetData {
         self.members.get(member).map(|s| s.0)
     }
 
-    pub fn len(&self) -> usize { self.members.len() }
-    pub fn is_empty(&self) -> bool { self.members.is_empty() }
+    pub fn len(&self) -> usize {
+        self.members.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.members.is_empty()
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -56,7 +83,9 @@ pub struct StreamId {
 }
 
 impl StreamId {
-    pub fn new(ms: u64, seq: u64) -> Self { Self { ms, seq } }
+    pub fn new(ms: u64, seq: u64) -> Self {
+        Self { ms, seq }
+    }
 }
 
 impl fmt::Display for StreamId {
@@ -80,7 +109,13 @@ pub struct ConsumerGroup {
 
 impl ConsumerGroup {
     pub fn new(name: String, last_delivered_id: StreamId, entries_read: i64) -> Self {
-        Self { name, last_delivered_id, pending: BTreeMap::new(), consumers: HashMap::new(), entries_read }
+        Self {
+            name,
+            last_delivered_id,
+            pending: BTreeMap::new(),
+            consumers: HashMap::new(),
+            entries_read,
+        }
     }
 }
 
@@ -93,7 +128,11 @@ pub struct PendingEntry {
 
 impl PendingEntry {
     pub fn new(consumer: String) -> Self {
-        Self { consumer, delivered_at: Instant::now(), delivery_count: 1 }
+        Self {
+            consumer,
+            delivered_at: Instant::now(),
+            delivery_count: 1,
+        }
     }
 }
 
@@ -106,7 +145,11 @@ pub struct Consumer {
 
 impl Consumer {
     pub fn new(name: String) -> Self {
-        Self { name, seen_time: Instant::now(), pending: BTreeMap::new() }
+        Self {
+            name,
+            seen_time: Instant::now(),
+            pending: BTreeMap::new(),
+        }
     }
 }
 
@@ -119,7 +162,9 @@ pub struct StreamData {
 }
 
 impl StreamData {
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
 
     pub fn add(&mut self, id: StreamId, fields: Vec<(Bytes, Bytes)>) {
         if id.ms > self.last_id.ms || (id.ms == self.last_id.ms && id.seq >= self.last_id.seq) {
@@ -128,21 +173,37 @@ impl StreamData {
         self.entries.insert(id, fields);
     }
 
-    pub fn len(&self) -> usize { self.entries.len() }
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
 
     pub fn generate_id(&self, requested: Option<StreamId>) -> Result<StreamId, String> {
         let now_ms = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64;
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
         let id = match requested {
             Some(id) => {
-                if id.ms == 0 && id.seq == 0 { return Err("ERR The ID specified in XADD must be greater than 0-0".into()); }
-                if id.ms < self.last_id.ms || (id.ms == self.last_id.ms && id.seq <= self.last_id.seq) {
+                if id.ms == 0 && id.seq == 0 {
+                    return Err("ERR The ID specified in XADD must be greater than 0-0".into());
+                }
+                if id.ms < self.last_id.ms
+                    || (id.ms == self.last_id.ms && id.seq <= self.last_id.seq)
+                {
                     return Err("ERR The ID specified in XADD is equal or smaller than the target stream top item".into());
                 }
                 id
             }
             None => {
-                let seq = if now_ms == self.last_id.ms { self.last_id.seq } else { 0 };
+                let seq = if now_ms == self.last_id.ms {
+                    self.last_id.seq
+                } else {
+                    0
+                };
                 StreamId::new(now_ms, seq)
             }
         };
@@ -163,7 +224,7 @@ pub enum EvictionPolicy {
 }
 
 impl EvictionPolicy {
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn from_policy_str(s: &str) -> Option<Self> {
         match s.to_ascii_lowercase().as_str() {
             "noeviction" => Some(Self::Noeviction),
             "allkeys-lru" => Some(Self::AllKeysLru),
@@ -191,17 +252,28 @@ impl EvictionPolicy {
     }
 
     pub fn is_volatile(&self) -> bool {
-        matches!(self, Self::VolatileLru | Self::VolatileLfu | Self::VolatileTtl | Self::VolatileRandom)
+        matches!(
+            self,
+            Self::VolatileLru | Self::VolatileLfu | Self::VolatileTtl | Self::VolatileRandom
+        )
     }
 }
 
 pub fn lfu_log_incr(counter: u64) -> u64 {
     if counter < 255 {
-        if counter == 0 { return 1; }
+        if counter == 0 {
+            return 1;
+        }
         let r = fastrand::u64(..);
         let threshold = counter.saturating_mul(10);
-        if r % threshold == 0 { counter + 1 } else { counter }
-    } else { counter }
+        if r.is_multiple_of(threshold) {
+            counter + 1
+        } else {
+            counter
+        }
+    } else {
+        counter
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -213,7 +285,11 @@ pub struct EvictionConfig {
 
 impl Default for EvictionConfig {
     fn default() -> Self {
-        Self { maxmemory: 0, policy: EvictionPolicy::Noeviction, maxmemory_samples: 5 }
+        Self {
+            maxmemory: 0,
+            policy: EvictionPolicy::Noeviction,
+            maxmemory_samples: 5,
+        }
     }
 }
 
@@ -229,7 +305,13 @@ pub struct Entry {
 impl Entry {
     pub fn new(data: DataType, ttl: Option<Duration>) -> Self {
         let now = Instant::now();
-        Self { data, expires_at: ttl.map(|d| now + d), last_access: now, access_count: 1, lfu_counter: 1 }
+        Self {
+            data,
+            expires_at: ttl.map(|d| now + d),
+            last_access: now,
+            access_count: 1,
+            lfu_counter: 1,
+        }
     }
 
     pub fn is_expired(&self) -> bool {
@@ -279,7 +361,9 @@ impl Store {
                 interval.tick().await;
                 if let Some(store) = store_weak.upgrade() {
                     store.evict_expired();
-                } else { break; }
+                } else {
+                    break;
+                }
             }
         });
         store
@@ -287,7 +371,10 @@ impl Store {
 
     fn evict_expired(&self) {
         self.keyspace.retain(|_key, entry| {
-            !entry.expires_at.map(|t| t < Instant::now()).unwrap_or(false)
+            !entry
+                .expires_at
+                .map(|t| t < Instant::now())
+                .unwrap_or(false)
         });
     }
 
@@ -319,7 +406,13 @@ impl Store {
 
     pub fn expire(&self, key: &Bytes, at: Instant) -> bool {
         self.notify_watchers(key);
-        let result = self.keyspace.get_mut(key).map(|mut e| { e.expires_at = Some(at); }).is_some();
+        let result = self
+            .keyspace
+            .get_mut(key)
+            .map(|mut e| {
+                e.expires_at = Some(at);
+            })
+            .is_some();
         if result {
             self.dirty_count.fetch_add(1, Ordering::Relaxed);
         }
@@ -328,20 +421,40 @@ impl Store {
 
     pub fn exists(&self, key: &Bytes) -> bool {
         if let Some(entry) = self.keyspace.get(key) {
-            if entry.is_expired() { drop(entry); self.keyspace.remove(key); false } else { true }
-        } else { false }
+            if entry.is_expired() {
+                drop(entry);
+                self.keyspace.remove(key);
+                false
+            } else {
+                true
+            }
+        } else {
+            false
+        }
     }
 
     pub fn ttl(&self, key: &Bytes) -> Option<Duration> {
         if let Some(entry) = self.keyspace.get(key) {
-            if entry.is_expired() { drop(entry); self.keyspace.remove(key); return None; }
-            entry.expires_at.and_then(|at| at.checked_duration_since(Instant::now()))
-        } else { None }
+            if entry.is_expired() {
+                drop(entry);
+                self.keyspace.remove(key);
+                return None;
+            }
+            entry
+                .expires_at
+                .and_then(|at| at.checked_duration_since(Instant::now()))
+        } else {
+            None
+        }
     }
 
     pub fn type_of(&self, key: &Bytes) -> Option<&'static str> {
         if let Some(entry) = self.keyspace.get(key) {
-            if entry.is_expired() { drop(entry); self.keyspace.remove(key); return None; }
+            if entry.is_expired() {
+                drop(entry);
+                self.keyspace.remove(key);
+                return None;
+            }
             Some(match &entry.data {
                 DataType::String(_) => "string",
                 DataType::List(_) => "list",
@@ -350,18 +463,27 @@ impl Store {
                 DataType::ZSet(_) => "zset",
                 DataType::Stream(_) => "stream",
             })
-        } else { None }
+        } else {
+            None
+        }
     }
 
     pub fn keys(&self, pattern: &str) -> Vec<Bytes> {
         if pattern == "*" {
-            return self.keyspace.iter().filter(|e| !e.is_expired()).map(|e| e.key().clone()).collect();
+            return self
+                .keyspace
+                .iter()
+                .filter(|e| !e.is_expired())
+                .map(|e| e.key().clone())
+                .collect();
         }
         let mut result = Vec::new();
         match pattern.split_once('*') {
             Some((prefix, suffix)) => {
                 for entry in self.keyspace.iter() {
-                    if entry.is_expired() { continue; }
+                    if entry.is_expired() {
+                        continue;
+                    }
                     let key_str = std::str::from_utf8(entry.key()).unwrap_or("");
                     if key_str.starts_with(prefix) && key_str.ends_with(suffix) {
                         result.push(entry.key().clone());
@@ -370,13 +492,17 @@ impl Store {
             }
             None => {
                 let key = Bytes::from(pattern.to_owned());
-                if self.exists(&key) { result.push(key); }
+                if self.exists(&key) {
+                    result.push(key);
+                }
             }
         }
         result
     }
 
-    pub fn dbsize(&self) -> usize { self.keyspace.len() }
+    pub fn dbsize(&self) -> usize {
+        self.keyspace.len()
+    }
     pub fn flush(&self) {
         self.keyspace.clear();
         self.watchers.clear();
@@ -386,10 +512,7 @@ impl Store {
     /// when the key is modified.
     pub fn watch(&self, key: &Bytes) -> std::sync::mpsc::Receiver<()> {
         let (tx, rx) = std::sync::mpsc::channel();
-        self.watchers
-            .entry(key.clone())
-            .or_insert_with(Vec::new)
-            .push(tx);
+        self.watchers.entry(key.clone()).or_default().push(tx);
         rx
     }
 
@@ -410,10 +533,14 @@ impl Store {
     }
 
     pub fn key_memory_usage(&self, key: &Bytes) -> Option<u64> {
-        self.keyspace.get(key).map(|e| e.memory_usage(key.len()) as u64)
+        self.keyspace
+            .get(key)
+            .map(|e| e.memory_usage(key.len()) as u64)
     }
 
-    pub fn eviction_config(&self) -> EvictionConfig { self.evict_config.read().unwrap().clone() }
+    pub fn eviction_config(&self) -> EvictionConfig {
+        self.evict_config.read().unwrap().clone()
+    }
 
     pub fn set_eviction_config(&self, config: EvictionConfig) {
         *self.evict_config.write().unwrap() = config;
@@ -421,8 +548,12 @@ impl Store {
 
     pub fn maybe_evict(&self) -> Result<(), String> {
         let config = self.eviction_config();
-        if config.maxmemory == 0 { return Ok(()); }
-        if self.memory_usage_bytes() <= config.maxmemory { return Ok(()); }
+        if config.maxmemory == 0 {
+            return Ok(());
+        }
+        if self.memory_usage_bytes() <= config.maxmemory {
+            return Ok(());
+        }
 
         let policy = config.policy;
         if policy == EvictionPolicy::Noeviction {
@@ -431,7 +562,9 @@ impl Store {
 
         let samples = config.maxmemory_samples.max(1) as usize;
         let all_keys: Vec<Bytes> = self.keyspace.iter().map(|e| e.key().clone()).collect();
-        if all_keys.is_empty() { return Ok(()); }
+        if all_keys.is_empty() {
+            return Ok(());
+        }
 
         let mut candidates: Vec<Bytes> = Vec::new();
         if all_keys.len() <= samples {
@@ -439,7 +572,9 @@ impl Store {
         } else {
             let mut rng_keys = all_keys;
             for _ in 0..samples {
-                if rng_keys.is_empty() { break; }
+                if rng_keys.is_empty() {
+                    break;
+                }
                 let idx = fastrand::usize(..rng_keys.len());
                 candidates.push(rng_keys.swap_remove(idx));
             }
@@ -448,9 +583,12 @@ impl Store {
         let mut victim: Option<(Bytes, i64)> = None;
         for key in &candidates {
             let entry = match self.keyspace.get(key) {
-                Some(e) => e, None => continue,
+                Some(e) => e,
+                None => continue,
             };
-            if policy.is_volatile() && entry.expires_at.is_none() { continue; }
+            if policy.is_volatile() && entry.expires_at.is_none() {
+                continue;
+            }
 
             let score: i64 = match policy {
                 EvictionPolicy::AllKeysLru | EvictionPolicy::VolatileLru => {
@@ -459,15 +597,13 @@ impl Store {
                 EvictionPolicy::AllKeysLfu | EvictionPolicy::VolatileLfu => {
                     i64::MAX - (entry.lfu_counter.min(255) as i64)
                 }
-                EvictionPolicy::VolatileTtl => {
-                    match entry.expires_at {
-                        Some(at) => {
-                            let remaining = at.saturating_duration_since(Instant::now()).as_nanos();
-                            i64::MAX - (remaining.min(i64::MAX as u128) as i64)
-                        }
-                        None => -1,
+                EvictionPolicy::VolatileTtl => match entry.expires_at {
+                    Some(at) => {
+                        let remaining = at.saturating_duration_since(Instant::now()).as_nanos();
+                        i64::MAX - (remaining.min(i64::MAX as u128) as i64)
                     }
-                }
+                    None => -1,
+                },
                 EvictionPolicy::AllKeysRandom | EvictionPolicy::VolatileRandom => fastrand::i64(..),
                 EvictionPolicy::Noeviction => unreachable!(),
             };
@@ -483,16 +619,24 @@ impl Store {
         Ok(())
     }
 
-    pub fn evicted_count(&self) -> u64 { self.evicted_keys.load(Ordering::Relaxed) }
+    pub fn evicted_count(&self) -> u64 {
+        self.evicted_keys.load(Ordering::Relaxed)
+    }
 
-    pub fn dirty_count(&self) -> u64 { self.dirty_count.load(Ordering::Relaxed) }
+    pub fn dirty_count(&self) -> u64 {
+        self.dirty_count.load(Ordering::Relaxed)
+    }
 
-    pub fn reset_dirty_count(&self) -> u64 { self.dirty_count.swap(0, Ordering::Relaxed) }
+    pub fn reset_dirty_count(&self) -> u64 {
+        self.dirty_count.swap(0, Ordering::Relaxed)
+    }
 }
 
 impl Deref for Store {
     type Target = DashMap<Bytes, Entry>;
-    fn deref(&self) -> &Self::Target { &self.keyspace }
+    fn deref(&self) -> &Self::Target {
+        &self.keyspace
+    }
 }
 
 #[cfg(test)]
@@ -515,8 +659,12 @@ mod tests {
         let key = Bytes::from("hello");
         let val = Bytes::from("world");
         store.set(key.clone(), DataType::String(val.clone()), None);
-        { let entry = store.get(&key).expect("key should exist");
-          match &entry.data { DataType::String(v) => assert_eq!(v, &val), _ => panic!("expected string") };
+        {
+            let entry = store.get(&key).expect("key should exist");
+            match &entry.data {
+                DataType::String(v) => assert_eq!(v, &val),
+                _ => panic!("expected string"),
+            };
         }
         assert!(store.del(&key));
         assert!(store.get(&key).is_none());
@@ -526,7 +674,11 @@ mod tests {
     async fn ttl_expiry() {
         let store = Store::new();
         let key = Bytes::from("temp");
-        store.set(key.clone(), DataType::String(Bytes::from("gone soon")), Some(Duration::from_millis(50)));
+        store.set(
+            key.clone(),
+            DataType::String(Bytes::from("gone soon")),
+            Some(Duration::from_millis(50)),
+        );
         assert!(store.get(&key).is_some());
         tokio::time::sleep(Duration::from_millis(150)).await;
         assert!(store.get(&key).is_none());
@@ -575,13 +727,34 @@ mod tests {
     #[test]
     fn keys_glob() {
         let store = test_store();
-        store.set(Bytes::from("user:1"), DataType::String(Bytes::from("a")), None);
-        store.set(Bytes::from("user:2"), DataType::String(Bytes::from("b")), None);
-        store.set(Bytes::from("post:1"), DataType::String(Bytes::from("c")), None);
-        let mut keys = store.keys("user:*"); keys.sort();
+        store.set(
+            Bytes::from("user:1"),
+            DataType::String(Bytes::from("a")),
+            None,
+        );
+        store.set(
+            Bytes::from("user:2"),
+            DataType::String(Bytes::from("b")),
+            None,
+        );
+        store.set(
+            Bytes::from("post:1"),
+            DataType::String(Bytes::from("c")),
+            None,
+        );
+        let mut keys = store.keys("user:*");
+        keys.sort();
         assert_eq!(keys, vec![Bytes::from("user:1"), Bytes::from("user:2")]);
-        let mut all = store.keys("*"); all.sort();
-        assert_eq!(all, vec![Bytes::from("post:1"), Bytes::from("user:1"), Bytes::from("user:2")]);
+        let mut all = store.keys("*");
+        all.sort();
+        assert_eq!(
+            all,
+            vec![
+                Bytes::from("post:1"),
+                Bytes::from("user:1"),
+                Bytes::from("user:2")
+            ]
+        );
     }
 
     #[test]
@@ -605,9 +778,15 @@ mod tests {
 
     #[test]
     fn eviction_policy_from_str() {
-        assert_eq!(EvictionPolicy::from_str("noeviction"), Some(EvictionPolicy::Noeviction));
-        assert_eq!(EvictionPolicy::from_str("allkeys-lru"), Some(EvictionPolicy::AllKeysLru));
-        assert_eq!(EvictionPolicy::from_str("invalid"), None);
+        assert_eq!(
+            EvictionPolicy::from_policy_str("noeviction"),
+            Some(EvictionPolicy::Noeviction)
+        );
+        assert_eq!(
+            EvictionPolicy::from_policy_str("allkeys-lru"),
+            Some(EvictionPolicy::AllKeysLru)
+        );
+        assert_eq!(EvictionPolicy::from_policy_str("invalid"), None);
     }
 
     #[test]
@@ -620,7 +799,9 @@ mod tests {
     fn lfu_log_incr_basic() {
         assert_eq!(lfu_log_incr(0), 1);
         let mut c = 1u64;
-        for _ in 0..1000 { c = lfu_log_incr(c); }
+        for _ in 0..1000 {
+            c = lfu_log_incr(c);
+        }
         assert!(c > 1);
         assert_eq!(lfu_log_incr(255), 255);
     }
@@ -628,17 +809,37 @@ mod tests {
     #[test]
     fn noeviction_returns_oom() {
         let store = test_store();
-        store.set_eviction_config(EvictionConfig { maxmemory: 1, policy: EvictionPolicy::Noeviction, maxmemory_samples: 5 });
-        store.set(Bytes::from("existing"), DataType::String(Bytes::from("data")), None);
+        store.set_eviction_config(EvictionConfig {
+            maxmemory: 1,
+            policy: EvictionPolicy::Noeviction,
+            maxmemory_samples: 5,
+        });
+        store.set(
+            Bytes::from("existing"),
+            DataType::String(Bytes::from("data")),
+            None,
+        );
         assert!(store.maybe_evict().is_err());
     }
 
     #[test]
     fn volatile_lru_only_evicts_ttl_keys() {
         let store = test_store();
-        store.set_eviction_config(EvictionConfig { maxmemory: 1, policy: EvictionPolicy::VolatileLru, maxmemory_samples: 5 });
-        store.set(Bytes::from("no_ttl"), DataType::String(Bytes::from("data")), None);
-        store.set(Bytes::from("ttl"), DataType::String(Bytes::from("data")), Some(Duration::from_secs(60)));
+        store.set_eviction_config(EvictionConfig {
+            maxmemory: 1,
+            policy: EvictionPolicy::VolatileLru,
+            maxmemory_samples: 5,
+        });
+        store.set(
+            Bytes::from("no_ttl"),
+            DataType::String(Bytes::from("data")),
+            None,
+        );
+        store.set(
+            Bytes::from("ttl"),
+            DataType::String(Bytes::from("data")),
+            Some(Duration::from_secs(60)),
+        );
         store.maybe_evict().unwrap();
         assert!(store.exists(&Bytes::from("no_ttl")));
     }
@@ -646,9 +847,21 @@ mod tests {
     #[test]
     fn volatile_ttl_prefers_smaller_ttl() {
         let store = test_store();
-        store.set_eviction_config(EvictionConfig { maxmemory: 1, policy: EvictionPolicy::VolatileTtl, maxmemory_samples: 5 });
-        store.set(Bytes::from("long_ttl"), DataType::String(Bytes::from("data")), Some(Duration::from_secs(300)));
-        store.set(Bytes::from("short_ttl"), DataType::String(Bytes::from("data")), Some(Duration::from_secs(1)));
+        store.set_eviction_config(EvictionConfig {
+            maxmemory: 1,
+            policy: EvictionPolicy::VolatileTtl,
+            maxmemory_samples: 5,
+        });
+        store.set(
+            Bytes::from("long_ttl"),
+            DataType::String(Bytes::from("data")),
+            Some(Duration::from_secs(300)),
+        );
+        store.set(
+            Bytes::from("short_ttl"),
+            DataType::String(Bytes::from("data")),
+            Some(Duration::from_secs(1)),
+        );
         store.maybe_evict().unwrap();
         assert!(store.exists(&Bytes::from("long_ttl")));
     }
@@ -656,8 +869,18 @@ mod tests {
     #[test]
     fn allkeys_random_evicts() {
         let store = test_store();
-        store.set_eviction_config(EvictionConfig { maxmemory: 1, policy: EvictionPolicy::AllKeysRandom, maxmemory_samples: 5 });
-        for i in 0..10 { store.set(Bytes::from(format!("k{}", i)), DataType::String(Bytes::from("d")), None); }
+        store.set_eviction_config(EvictionConfig {
+            maxmemory: 1,
+            policy: EvictionPolicy::AllKeysRandom,
+            maxmemory_samples: 5,
+        });
+        for i in 0..10 {
+            store.set(
+                Bytes::from(format!("k{}", i)),
+                DataType::String(Bytes::from("d")),
+                None,
+            );
+        }
         store.maybe_evict().unwrap();
         assert_eq!(store.dbsize(), 9);
     }
@@ -665,8 +888,18 @@ mod tests {
     #[test]
     fn maxmemory_zero_never_evicts() {
         let store = test_store();
-        store.set_eviction_config(EvictionConfig { maxmemory: 0, policy: EvictionPolicy::AllKeysLru, maxmemory_samples: 5 });
-        for i in 0..50 { store.set(Bytes::from(format!("k{}", i)), DataType::String(Bytes::from("d")), None); }
+        store.set_eviction_config(EvictionConfig {
+            maxmemory: 0,
+            policy: EvictionPolicy::AllKeysLru,
+            maxmemory_samples: 5,
+        });
+        for i in 0..50 {
+            store.set(
+                Bytes::from(format!("k{}", i)),
+                DataType::String(Bytes::from("d")),
+                None,
+            );
+        }
         store.maybe_evict().unwrap();
         assert_eq!(store.dbsize(), 50);
     }
@@ -674,7 +907,11 @@ mod tests {
     #[test]
     fn eviction_config_roundtrip() {
         let store = test_store();
-        let cfg = EvictionConfig { maxmemory: 1024, policy: EvictionPolicy::AllKeysLfu, maxmemory_samples: 10 };
+        let cfg = EvictionConfig {
+            maxmemory: 1024,
+            policy: EvictionPolicy::AllKeysLfu,
+            maxmemory_samples: 10,
+        };
         store.set_eviction_config(cfg.clone());
         let r = store.eviction_config();
         assert_eq!(r.maxmemory, cfg.maxmemory);

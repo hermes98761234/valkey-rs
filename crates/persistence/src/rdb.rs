@@ -411,7 +411,10 @@ fn decode_value(input: &[u8], pos: &mut usize, type_byte: u8) -> Result<DataType
                 *pos += 8;
                 let score = ordered_float::OrderedFloat(f64::from_le_bytes(score_bytes));
                 members.insert(member.clone(), score);
-                scores.entry(score).or_insert_with(BTreeSet::new).insert(member);
+                scores
+                    .entry(score)
+                    .or_insert_with(BTreeSet::new)
+                    .insert(member);
             }
             Ok(DataType::ZSet(valkey_storage::ZSetData { scores, members }))
         }
@@ -481,9 +484,7 @@ fn decode_value(input: &[u8], pos: &mut usize, type_byte: u8) -> Result<DataType
 // ---------------------------------------------------------------------------
 
 pub async fn bgsave(store: Arc<Store>, path: std::path::PathBuf) -> JoinHandle<Result<()>> {
-    tokio::spawn(async move {
-        save(&store, &path).await
-    })
+    tokio::spawn(async move { save(&store, &path).await })
 }
 
 // ---------------------------------------------------------------------------
@@ -508,7 +509,11 @@ mod tests {
     #[tokio::test]
     async fn test_save_load_string() {
         let store = test_store();
-        store.set(Bytes::from("hello"), DataType::String(Bytes::from("world")), None);
+        store.set(
+            Bytes::from("hello"),
+            DataType::String(Bytes::from("world")),
+            None,
+        );
 
         let path = std::env::temp_dir().join("test_rdb_string.rdb");
         save(&store, &path).await.unwrap();
@@ -671,7 +676,11 @@ mod tests {
     async fn test_save_load_all_types() {
         let store = test_store();
 
-        store.set(Bytes::from("str"), DataType::String(Bytes::from("value")), None);
+        store.set(
+            Bytes::from("str"),
+            DataType::String(Bytes::from("value")),
+            None,
+        );
 
         let mut list = VecDeque::new();
         list.push_back(Bytes::from("a"));
@@ -693,7 +702,10 @@ mod tests {
         store.set(Bytes::from("zset"), DataType::ZSet(zset), None);
 
         let mut stream = StreamData::new();
-        stream.add(StreamId::new(1000, 0), vec![(Bytes::from("k"), Bytes::from("v"))]);
+        stream.add(
+            StreamId::new(1000, 0),
+            vec![(Bytes::from("k"), Bytes::from("v"))],
+        );
         store.set(Bytes::from("stream"), DataType::Stream(stream), None);
 
         store.set(
@@ -760,7 +772,11 @@ mod tests {
     #[tokio::test]
     async fn test_bgsave() {
         let store = test_store();
-        store.set(Bytes::from("key"), DataType::String(Bytes::from("val")), None);
+        store.set(
+            Bytes::from("key"),
+            DataType::String(Bytes::from("val")),
+            None,
+        );
 
         let path = std::env::temp_dir().join("test_rdb_bgsave.rdb");
         let handle = bgsave(store.clone(), path.clone()).await;

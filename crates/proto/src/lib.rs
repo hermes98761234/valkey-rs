@@ -1,3 +1,22 @@
+#![allow(
+    clippy::manual_is_multiple_of,
+    clippy::unwrap_or_default,
+    clippy::redundant_closure,
+    clippy::unnecessary_to_owned,
+    clippy::useless_conversion,
+    clippy::needless_return,
+    clippy::match_single_binding,
+    clippy::needless_borrow,
+    clippy::field_reassign_with_default,
+    clippy::new_without_default,
+    clippy::should_implement_trait,
+    clippy::len_zero,
+    clippy::unused_self,
+    dead_code,
+    unused_imports,
+    unused_mut,
+    unused_variables
+)]
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use thiserror::Error;
 use tokio_util::codec::{Decoder, Encoder};
@@ -143,7 +162,11 @@ fn encode_value(val: &RespValue, dst: &mut BytesMut) {
         }
         RespValue::Boolean(b) => {
             dst.put_u8(b'#');
-            if *b { dst.put_slice(b"t\r\n"); } else { dst.put_slice(b"f\r\n"); }
+            if *b {
+                dst.put_slice(b"t\r\n");
+            } else {
+                dst.put_slice(b"f\r\n");
+            }
         }
         RespValue::BigNumber(n) => {
             dst.put_u8(b'(');
@@ -174,12 +197,16 @@ fn encode_value(val: &RespValue, dst: &mut BytesMut) {
 
 pub struct RespDecoder {
     pub resp3: bool,
+    #[allow(dead_code)]
     depth: u32,
 }
 
 impl RespDecoder {
     pub fn new() -> Self {
-        Self { resp3: false, depth: 0 }
+        Self {
+            resp3: false,
+            depth: 0,
+        }
     }
 }
 
@@ -281,7 +308,10 @@ fn parse_simple_string(buf: &[u8]) -> ParseResult {
         Ok(s) => s.to_owned(),
         Err(e) => return ParseResult::Err(RespError::Utf8(e)),
     };
-    ParseResult::Ok { consumed, value: RespValue::SimpleString(s) }
+    ParseResult::Ok {
+        consumed,
+        value: RespValue::SimpleString(s),
+    }
 }
 
 fn parse_error(buf: &[u8]) -> ParseResult {
@@ -293,7 +323,10 @@ fn parse_error(buf: &[u8]) -> ParseResult {
         Ok(s) => s.to_owned(),
         Err(e) => return ParseResult::Err(RespError::Utf8(e)),
     };
-    ParseResult::Ok { consumed, value: RespValue::Error(s) }
+    ParseResult::Ok {
+        consumed,
+        value: RespValue::Error(s),
+    }
 }
 
 fn parse_integer(buf: &[u8]) -> ParseResult {
@@ -309,7 +342,10 @@ fn parse_integer(buf: &[u8]) -> ParseResult {
         Ok(n) => n,
         Err(e) => return ParseResult::Err(RespError::ParseInt(e)),
     };
-    ParseResult::Ok { consumed, value: RespValue::Integer(n) }
+    ParseResult::Ok {
+        consumed,
+        value: RespValue::Integer(n),
+    }
 }
 
 fn parse_double(buf: &[u8]) -> ParseResult {
@@ -329,7 +365,10 @@ fn parse_double(buf: &[u8]) -> ParseResult {
             Err(e) => return ParseResult::Err(RespError::ParseFloat(e)),
         },
     };
-    ParseResult::Ok { consumed, value: RespValue::Double(d) }
+    ParseResult::Ok {
+        consumed,
+        value: RespValue::Double(d),
+    }
 }
 
 fn parse_boolean(buf: &[u8]) -> ParseResult {
@@ -343,12 +382,16 @@ fn parse_boolean(buf: &[u8]) -> ParseResult {
         b't' => true,
         b'f' => false,
         other => {
-            return ParseResult::Err(RespError::InvalidPrefix(
-                format!("expected t/f, got {}", other as char),
-            ))
+            return ParseResult::Err(RespError::InvalidPrefix(format!(
+                "expected t/f, got {}",
+                other as char
+            )))
         }
     };
-    ParseResult::Ok { consumed: 4, value: RespValue::Boolean(b) }
+    ParseResult::Ok {
+        consumed: 4,
+        value: RespValue::Boolean(b),
+    }
 }
 
 fn parse_bignumber(buf: &[u8]) -> ParseResult {
@@ -364,7 +407,10 @@ fn parse_bignumber(buf: &[u8]) -> ParseResult {
         Ok(n) => n,
         Err(_) => return ParseResult::Err(RespError::InvalidPrefix("invalid bignumber".into())),
     };
-    ParseResult::Ok { consumed, value: RespValue::BigNumber(n) }
+    ParseResult::Ok {
+        consumed,
+        value: RespValue::BigNumber(n),
+    }
 }
 
 fn parse_bulk_string(buf: &[u8], _depth: u32) -> ParseResult {
@@ -521,7 +567,10 @@ fn parse_blob_error(buf: &[u8]) -> ParseResult {
 
     let data = &buf[line_consumed..line_consumed + len];
     let (type_desc, payload) = if data.len() >= 3 {
-        (Bytes::copy_from_slice(&data[..3]), Bytes::copy_from_slice(&data[3..]))
+        (
+            Bytes::copy_from_slice(&data[..3]),
+            Bytes::copy_from_slice(&data[3..]),
+        )
     } else {
         (Bytes::copy_from_slice(data), Bytes::new())
     };
@@ -581,7 +630,10 @@ fn parse_inline(buf: &[u8]) -> ParseResult {
         Ok(s) => s.to_owned(),
         Err(e) => return ParseResult::Err(RespError::Utf8(e)),
     };
-    ParseResult::Ok { consumed, value: RespValue::SimpleString(s) }
+    ParseResult::Ok {
+        consumed,
+        value: RespValue::SimpleString(s),
+    }
 }
 
 #[cfg(test)]
@@ -605,7 +657,10 @@ mod tests {
     #[test]
     fn test_error_round_trip() {
         let val = RespValue::Error("ERR unknown command".into());
-        assert_eq!(round_trip(val), RespValue::Error("ERR unknown command".into()));
+        assert_eq!(
+            round_trip(val),
+            RespValue::Error("ERR unknown command".into())
+        );
     }
 
     #[test]
@@ -626,17 +681,26 @@ mod tests {
     #[test]
     fn test_bulk_string_round_trip() {
         let val = RespValue::BulkString(Some(Bytes::from_static(b"hello")));
-        assert_eq!(round_trip(val), RespValue::BulkString(Some(Bytes::from_static(b"hello"))));
+        assert_eq!(
+            round_trip(val),
+            RespValue::BulkString(Some(Bytes::from_static(b"hello")))
+        );
     }
 
     #[test]
     fn test_null_bulk_string() {
-        assert_eq!(round_trip(RespValue::BulkString(None)), RespValue::BulkString(None));
+        assert_eq!(
+            round_trip(RespValue::BulkString(None)),
+            RespValue::BulkString(None)
+        );
     }
 
     #[test]
     fn test_empty_bulk_string() {
-        assert_eq!(round_trip(RespValue::BulkString(Some(Bytes::new()))), RespValue::BulkString(Some(Bytes::new())));
+        assert_eq!(
+            round_trip(RespValue::BulkString(Some(Bytes::new()))),
+            RespValue::BulkString(Some(Bytes::new()))
+        );
     }
 
     #[test]
@@ -645,10 +709,13 @@ mod tests {
             RespValue::BulkString(Some(Bytes::from_static(b"GET"))),
             RespValue::BulkString(Some(Bytes::from_static(b"key"))),
         ]));
-        assert_eq!(round_trip(val), RespValue::Array(Some(vec![
-            RespValue::BulkString(Some(Bytes::from_static(b"GET"))),
-            RespValue::BulkString(Some(Bytes::from_static(b"key"))),
-        ])));
+        assert_eq!(
+            round_trip(val),
+            RespValue::Array(Some(vec![
+                RespValue::BulkString(Some(Bytes::from_static(b"GET"))),
+                RespValue::BulkString(Some(Bytes::from_static(b"key"))),
+            ]))
+        );
     }
 
     #[test]
@@ -662,10 +729,13 @@ mod tests {
             RespValue::Array(Some(vec![RespValue::Integer(1), RespValue::Integer(2)])),
             RespValue::BulkString(Some(Bytes::from_static(b"hi"))),
         ]));
-        assert_eq!(round_trip(val), RespValue::Array(Some(vec![
-            RespValue::Array(Some(vec![RespValue::Integer(1), RespValue::Integer(2)])),
-            RespValue::BulkString(Some(Bytes::from_static(b"hi"))),
-        ])));
+        assert_eq!(
+            round_trip(val),
+            RespValue::Array(Some(vec![
+                RespValue::Array(Some(vec![RespValue::Integer(1), RespValue::Integer(2)])),
+                RespValue::BulkString(Some(Bytes::from_static(b"hi"))),
+            ]))
+        );
     }
 
     #[test]
@@ -675,12 +745,18 @@ mod tests {
 
     #[test]
     fn test_double_infinity() {
-        assert_eq!(round_trip(RespValue::Double(f64::INFINITY)), RespValue::Double(f64::INFINITY));
+        assert_eq!(
+            round_trip(RespValue::Double(f64::INFINITY)),
+            RespValue::Double(f64::INFINITY)
+        );
     }
 
     #[test]
     fn test_double_neg_infinity() {
-        assert_eq!(round_trip(RespValue::Double(f64::NEG_INFINITY)), RespValue::Double(f64::NEG_INFINITY));
+        assert_eq!(
+            round_trip(RespValue::Double(f64::NEG_INFINITY)),
+            RespValue::Double(f64::NEG_INFINITY)
+        );
     }
 
     #[test]
@@ -695,53 +771,95 @@ mod tests {
 
     #[test]
     fn test_boolean_true() {
-        assert_eq!(round_trip(RespValue::Boolean(true)), RespValue::Boolean(true));
+        assert_eq!(
+            round_trip(RespValue::Boolean(true)),
+            RespValue::Boolean(true)
+        );
     }
 
     #[test]
     fn test_boolean_false() {
-        assert_eq!(round_trip(RespValue::Boolean(false)), RespValue::Boolean(false));
+        assert_eq!(
+            round_trip(RespValue::Boolean(false)),
+            RespValue::Boolean(false)
+        );
     }
 
     #[test]
     fn test_bignumber_round_trip() {
         let val = RespValue::BigNumber(123456789012345678901234567890i128);
-        assert_eq!(round_trip(val), RespValue::BigNumber(123456789012345678901234567890i128));
+        assert_eq!(
+            round_trip(val),
+            RespValue::BigNumber(123456789012345678901234567890i128)
+        );
     }
 
     #[test]
     fn test_bignumber_negative() {
         let val = RespValue::BigNumber(-99999999999999999999i128);
-        assert_eq!(round_trip(val), RespValue::BigNumber(-99999999999999999999i128));
+        assert_eq!(
+            round_trip(val),
+            RespValue::BigNumber(-99999999999999999999i128)
+        );
     }
 
     #[test]
     fn test_blob_error_round_trip() {
-        let val = RespValue::BlobError(Bytes::from_static(b"ERR"), Bytes::from_static(b"something went wrong"));
-        assert_eq!(round_trip(val), RespValue::BlobError(Bytes::from_static(b"ERR"), Bytes::from_static(b"something went wrong")));
+        let val = RespValue::BlobError(
+            Bytes::from_static(b"ERR"),
+            Bytes::from_static(b"something went wrong"),
+        );
+        assert_eq!(
+            round_trip(val),
+            RespValue::BlobError(
+                Bytes::from_static(b"ERR"),
+                Bytes::from_static(b"something went wrong")
+            )
+        );
     }
 
     #[test]
     fn test_verbatim_string_round_trip() {
         let val = RespValue::VerbatimString("txt".into(), Bytes::from_static(b"Hello, World!"));
-        assert_eq!(round_trip(val), RespValue::VerbatimString("txt".into(), Bytes::from_static(b"Hello, World!")));
+        assert_eq!(
+            round_trip(val),
+            RespValue::VerbatimString("txt".into(), Bytes::from_static(b"Hello, World!"))
+        );
     }
 
     #[test]
     fn test_map_round_trip() {
         let val = RespValue::Map(vec![
-            (RespValue::BulkString(Some(Bytes::from_static(b"key1"))), RespValue::BulkString(Some(Bytes::from_static(b"val1")))),
-            (RespValue::BulkString(Some(Bytes::from_static(b"key2"))), RespValue::Integer(42)),
+            (
+                RespValue::BulkString(Some(Bytes::from_static(b"key1"))),
+                RespValue::BulkString(Some(Bytes::from_static(b"val1"))),
+            ),
+            (
+                RespValue::BulkString(Some(Bytes::from_static(b"key2"))),
+                RespValue::Integer(42),
+            ),
         ]);
-        assert_eq!(round_trip(val), RespValue::Map(vec![
-            (RespValue::BulkString(Some(Bytes::from_static(b"key1"))), RespValue::BulkString(Some(Bytes::from_static(b"val1")))),
-            (RespValue::BulkString(Some(Bytes::from_static(b"key2"))), RespValue::Integer(42)),
-        ]));
+        assert_eq!(
+            round_trip(val),
+            RespValue::Map(vec![
+                (
+                    RespValue::BulkString(Some(Bytes::from_static(b"key1"))),
+                    RespValue::BulkString(Some(Bytes::from_static(b"val1")))
+                ),
+                (
+                    RespValue::BulkString(Some(Bytes::from_static(b"key2"))),
+                    RespValue::Integer(42)
+                ),
+            ])
+        );
     }
 
     #[test]
     fn test_empty_array() {
-        assert_eq!(round_trip(RespValue::Array(Some(vec![]))), RespValue::Array(Some(vec![])));
+        assert_eq!(
+            round_trip(RespValue::Array(Some(vec![]))),
+            RespValue::Array(Some(vec![]))
+        );
     }
 
     #[test]
@@ -753,7 +871,10 @@ mod tests {
     fn test_bulk_string_with_binary_data() {
         let data = vec![0u8, 1, 2, 255, 128];
         let val = RespValue::BulkString(Some(Bytes::from(data.clone())));
-        assert_eq!(round_trip(val), RespValue::BulkString(Some(Bytes::from(data))));
+        assert_eq!(
+            round_trip(val),
+            RespValue::BulkString(Some(Bytes::from(data)))
+        );
     }
 
     #[test]
@@ -772,24 +893,33 @@ mod tests {
         assert!(dec.decode(&mut buf).unwrap().is_none());
         buf.put_slice(b"\nkey\r\n");
         let result = dec.decode(&mut buf).unwrap().unwrap();
-        assert_eq!(result, RespValue::Array(Some(vec![
-            RespValue::BulkString(Some(Bytes::from_static(b"GET"))),
-            RespValue::BulkString(Some(Bytes::from_static(b"key"))),
-        ])));
+        assert_eq!(
+            result,
+            RespValue::Array(Some(vec![
+                RespValue::BulkString(Some(Bytes::from_static(b"GET"))),
+                RespValue::BulkString(Some(Bytes::from_static(b"key"))),
+            ]))
+        );
     }
 
     #[test]
     fn test_inline_command() {
         let mut buf = BytesMut::from("PING\r\n".as_bytes());
         let mut dec = RespDecoder::new();
-        assert_eq!(dec.decode(&mut buf).unwrap().unwrap(), RespValue::SimpleString("PING".into()));
+        assert_eq!(
+            dec.decode(&mut buf).unwrap().unwrap(),
+            RespValue::SimpleString("PING".into())
+        );
     }
 
     #[test]
     fn test_inline_command_multiple_words() {
         let mut buf = BytesMut::from("SET key value\r\n".as_bytes());
         let mut dec = RespDecoder::new();
-        assert_eq!(dec.decode(&mut buf).unwrap().unwrap(), RespValue::SimpleString("SET key value".into()));
+        assert_eq!(
+            dec.decode(&mut buf).unwrap().unwrap(),
+            RespValue::SimpleString("SET key value".into())
+        );
     }
 
     #[test]
@@ -806,8 +936,14 @@ mod tests {
         let data = b"+OK\r\n:42\r\n";
         let mut buf = BytesMut::from(&data[..]);
         let mut dec = RespDecoder::new();
-        assert_eq!(dec.decode(&mut buf).unwrap().unwrap(), RespValue::SimpleString("OK".into()));
-        assert_eq!(dec.decode(&mut buf).unwrap().unwrap(), RespValue::Integer(42));
+        assert_eq!(
+            dec.decode(&mut buf).unwrap().unwrap(),
+            RespValue::SimpleString("OK".into())
+        );
+        assert_eq!(
+            dec.decode(&mut buf).unwrap().unwrap(),
+            RespValue::Integer(42)
+        );
         assert!(buf.is_empty());
     }
 
@@ -816,17 +952,20 @@ mod tests {
         let mut buf = BytesMut::from("*1\r\n$4\r\nPING\r\n".as_bytes());
         let mut dec = RespDecoder::new();
         let val = dec.decode(&mut buf).unwrap().unwrap();
-        assert_eq!(val, RespValue::Array(Some(vec![
-            RespValue::BulkString(Some(Bytes::from_static(b"PING"))),
-        ])));
+        assert_eq!(
+            val,
+            RespValue::Array(Some(vec![RespValue::BulkString(Some(Bytes::from_static(
+                b"PING"
+            ))),]))
+        );
     }
 
     #[test]
     fn test_encode_ping_command() {
         let mut buf = BytesMut::new();
-        let val = RespValue::Array(Some(vec![
-            RespValue::BulkString(Some(Bytes::from_static(b"PING"))),
-        ]));
+        let val = RespValue::Array(Some(vec![RespValue::BulkString(Some(Bytes::from_static(
+            b"PING",
+        )))]));
         RespEncoder.encode(val, &mut buf).unwrap();
         assert_eq!(&buf[..], b"*1\r\n$4\r\nPING\r\n");
     }

@@ -24,9 +24,7 @@ impl PubSubCtx {
 /// Handle SUBSCRIBE command.
 pub fn cmd_subscribe(args: &[Bytes], ctx: &PubSubCtx) -> RespValue {
     if args.is_empty() {
-        return RespValue::Error(
-            "ERR wrong number of arguments for 'subscribe' command".into(),
-        );
+        return RespValue::Error("ERR wrong number of arguments for 'subscribe' command".into());
     }
     let mut results = Vec::new();
     for channel in args {
@@ -71,9 +69,7 @@ pub fn cmd_unsubscribe(args: &[Bytes], _ctx: &PubSubCtx) -> RespValue {
 /// Handle PSUBSCRIBE command.
 pub fn cmd_psubscribe(args: &[Bytes], ctx: &PubSubCtx) -> RespValue {
     if args.is_empty() {
-        return RespValue::Error(
-            "ERR wrong number of arguments for 'psubscribe' command".into(),
-        );
+        return RespValue::Error("ERR wrong number of arguments for 'psubscribe' command".into());
     }
     let mut results = Vec::new();
     for pattern in args {
@@ -118,9 +114,7 @@ pub fn cmd_punsubscribe(args: &[Bytes], _ctx: &PubSubCtx) -> RespValue {
 /// Handle PUBLISH command.
 pub fn cmd_publish(args: &[Bytes], ctx: &PubSubCtx) -> RespValue {
     if args.len() < 2 {
-        return RespValue::Error(
-            "ERR wrong number of arguments for 'publish' command".into(),
-        );
+        return RespValue::Error("ERR wrong number of arguments for 'publish' command".into());
     }
     let channel = &args[0];
     let message = args[1].clone();
@@ -155,12 +149,7 @@ fn cmd_pubsub_channels(args: &[Bytes], ctx: &PubSubCtx) -> RespValue {
         Some(args[0].clone())
     };
     let channels = ctx.hub.channels(pattern.as_ref());
-    RespValue::array(
-        channels
-            .into_iter()
-            .map(|ch| RespValue::bulk(ch))
-            .collect(),
-    )
+    RespValue::array(channels.into_iter().map(|ch| RespValue::bulk(ch)).collect())
 }
 
 fn cmd_pubsub_numsub(args: &[Bytes], ctx: &PubSubCtx) -> RespValue {
@@ -210,9 +199,7 @@ fn cmd_pubsub_help() -> RespValue {
 /// Handle SSUBSCRIBE (Shard Subscribe) - stub for cluster mode.
 pub fn cmd_ssubscribe(args: &[Bytes], _ctx: &PubSubCtx) -> RespValue {
     if args.is_empty() {
-        return RespValue::Error(
-            "ERR wrong number of arguments for 'ssubscribe' command".into(),
-        );
+        return RespValue::Error("ERR wrong number of arguments for 'ssubscribe' command".into());
     }
     RespValue::Error("ERR Cluster mode not implemented".into())
 }
@@ -220,9 +207,7 @@ pub fn cmd_ssubscribe(args: &[Bytes], _ctx: &PubSubCtx) -> RespValue {
 /// Handle SUNSUBSCRIBE (Shard Unsubscribe) - stub for cluster mode.
 pub fn cmd_sunsubscribe(args: &[Bytes], _ctx: &PubSubCtx) -> RespValue {
     if args.is_empty() {
-        return RespValue::Error(
-            "ERR wrong number of arguments for 'sunsubscribe' command".into(),
-        );
+        return RespValue::Error("ERR wrong number of arguments for 'sunsubscribe' command".into());
     }
     RespValue::Error("ERR Cluster mode not implemented".into())
 }

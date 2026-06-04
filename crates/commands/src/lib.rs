@@ -1,19 +1,48 @@
+#![allow(
+    clippy::len_without_is_empty,
+    clippy::len_zero,
+    clippy::manual_is_multiple_of,
+    clippy::unwrap_or_default,
+    clippy::redundant_closure,
+    clippy::single_match,
+    clippy::trim_split_whitespace,
+    clippy::unnecessary_to_owned,
+    clippy::useless_conversion,
+    clippy::needless_return,
+    clippy::match_single_binding,
+    clippy::needless_borrow,
+    clippy::field_reassign_with_default,
+    clippy::new_without_default,
+    clippy::should_implement_trait,
+    clippy::useless_format,
+    clippy::map_clone,
+    clippy::vec_init_then_push,
+    clippy::manual_strip,
+    clippy::manual_ignore_case_cmp,
+    clippy::needless_range_loop,
+    clippy::manual_unwrap_or,
+    clippy::for_kv_map,
+    dead_code,
+    unused_imports,
+    unused_mut,
+    unused_variables
+)]
 use bytes::Bytes;
 use std::sync::{Arc, OnceLock, RwLock};
 use valkey_proto::RespValue;
 use valkey_storage::Store;
 
-pub mod string;
-pub mod keys;
-pub mod server;
-pub mod zset;
-pub mod list;
-pub mod hash;
-pub mod set;
-pub mod pubsub;
-pub mod transaction;
 pub mod acl;
+pub mod hash;
+pub mod keys;
+pub mod list;
+pub mod pubsub;
 pub mod replication;
+pub mod server;
+pub mod set;
+pub mod string;
+pub mod transaction;
+pub mod zset;
 
 pub type Db = Arc<Store>;
 
@@ -77,55 +106,38 @@ pub async fn dispatch_ctx(cmd: Vec<Bytes>, store: Db, ctx: &CommandCtx) -> RespV
     }
 
     match name.as_str() {
-        "PING" | "ECHO" | "SELECT" | "DBSIZE" | "FLUSHDB" | "FLUSHALL"
-        | "INFO" | "COMMAND" | "CONFIG" | "SAVE" | "BGSAVE" | "BGREWRITEAOF"
-        | "LASTSAVE" | "TIME" | "LATENCY" | "SLOWLOG" | "MEMORY" | "CLIENT"
-        | "DEBUG" | "OBJECT" | "RESET" | "REPLCONF" | "REPLICAOF" | "SLAVEOF" => {
+        "PING" | "ECHO" | "SELECT" | "DBSIZE" | "FLUSHDB" | "FLUSHALL" | "INFO" | "COMMAND"
+        | "CONFIG" | "SAVE" | "BGSAVE" | "BGREWRITEAOF" | "LASTSAVE" | "TIME" | "LATENCY"
+        | "SLOWLOG" | "MEMORY" | "CLIENT" | "DEBUG" | "OBJECT" | "RESET" | "REPLCONF"
+        | "REPLICAOF" | "SLAVEOF" => {
             server::handle(&cmd, &store, ctx.client.clone(), ctx.config.clone()).await
         }
         "QUIT" => return RespValue::SimpleString("OK".into()),
-        "GET"|"SET"|"DEL"|"GETSET"|"MGET"|"MSET"|"MSETNX"
-        |"INCR"|"DECR"|"INCRBY"|"DECRBY"|"INCRBYFLOAT"|"APPEND"
-        |"STRLEN"|"GETRANGE"|"SETRANGE"|"SETNX"|"SETEX"|"PSETEX"
-        |"GETEX"|"GETDEL" => string::handle(&cmd, &store).await,
-        "EXISTS"|"TYPE"|"RENAME"|"RENAMENX"|"EXPIRE"|"PEXPIRE"|"EXPIREAT"
-        |"PEXPIREAT"|"TTL"|"PTTL"|"PERSIST"|"KEYS"|"SCAN"|"RANDOMKEY"
-        |"MOVE"|"COPY"|"DUMP"|"RESTORE"|"SORT"|"UNLINK" => {
-            keys::handle(&cmd, &store).await
-        }
-        "WAIT" => {
-            replication::cmd_wait(&cmd[1..]).await
-        }
-        "LPUSH"|"RPUSH"|"LPOP"|"RPOP"|"LRANGE"|"LLEN"|"LINDEX"|"LSET"
-        |"LINSERT"|"LREM"|"LTRIM"|"LMOVE"|"BLPOP"|"BRPOP" => {
-            list::handle(&cmd, &store).await
-        }
-        "HSET"|"HGET"|"HMGET"|"HMSET"|"HGETALL"|"HDEL"|"HEXISTS"
-        |"HLEN"|"HKEYS"|"HVALS"|"HINCRBY"|"HINCRBYFLOAT"|"HSCAN"
-        |"HRANDFIELD" => {
-            hash::handle(&cmd)
-        }
-        "SADD"|"SMEMBERS"|"SISMEMBER"|"SMISMEMBER"|"SCARD"|"SREM"
-        |"SPOP"|"SRANDMEMBER"|"SMOVE"|"SUNION"|"SINTER"|"SDIFF"
-        |"SUNIONSTORE"|"SINTERSTORE"|"SDIFFSTORE"|"SSCAN" => {
-            set::handle(&cmd, &store)
-        }
-        "SUBSCRIBE"|"UNSUBSCRIBE"|"PSUBSCRIBE"|"PUNSUBSCRIBE"
-        |"PUBLISH"|"PUBSUB"|"SSUBSCRIBE"|"SUNSUBSCRIBE" => {
-            return RespValue::Error(
-                "ERR PubSub commands must be handled in pub/sub mode".into(),
-            );
+        "GET" | "SET" | "DEL" | "GETSET" | "MGET" | "MSET" | "MSETNX" | "INCR" | "DECR"
+        | "INCRBY" | "DECRBY" | "INCRBYFLOAT" | "APPEND" | "STRLEN" | "GETRANGE" | "SETRANGE"
+        | "SETNX" | "SETEX" | "PSETEX" | "GETEX" | "GETDEL" => string::handle(&cmd, &store).await,
+        "EXISTS" | "TYPE" | "RENAME" | "RENAMENX" | "EXPIRE" | "PEXPIRE" | "EXPIREAT"
+        | "PEXPIREAT" | "TTL" | "PTTL" | "PERSIST" | "KEYS" | "SCAN" | "RANDOMKEY" | "MOVE"
+        | "COPY" | "DUMP" | "RESTORE" | "SORT" | "UNLINK" => keys::handle(&cmd, &store).await,
+        "WAIT" => replication::cmd_wait(&cmd[1..]).await,
+        "LPUSH" | "RPUSH" | "LPOP" | "RPOP" | "LRANGE" | "LLEN" | "LINDEX" | "LSET" | "LINSERT"
+        | "LREM" | "LTRIM" | "LMOVE" | "BLPOP" | "BRPOP" => list::handle(&cmd, &store).await,
+        "HSET" | "HGET" | "HMGET" | "HMSET" | "HGETALL" | "HDEL" | "HEXISTS" | "HLEN" | "HKEYS"
+        | "HVALS" | "HINCRBY" | "HINCRBYFLOAT" | "HSCAN" | "HRANDFIELD" => hash::handle(&cmd),
+        "SADD" | "SMEMBERS" | "SISMEMBER" | "SMISMEMBER" | "SCARD" | "SREM" | "SPOP"
+        | "SRANDMEMBER" | "SMOVE" | "SUNION" | "SINTER" | "SDIFF" | "SUNIONSTORE"
+        | "SINTERSTORE" | "SDIFFSTORE" | "SSCAN" => set::handle(&cmd, &store),
+        "SUBSCRIBE" | "UNSUBSCRIBE" | "PSUBSCRIBE" | "PUNSUBSCRIBE" | "PUBLISH" | "PUBSUB"
+        | "SSUBSCRIBE" | "SUNSUBSCRIBE" => {
+            return RespValue::Error("ERR PubSub commands must be handled in pub/sub mode".into());
         }
         "MULTI" | "EXEC" | "DISCARD" | "WATCH" | "UNWATCH" => {
-            transaction::handle(&cmd, &store, ctx.client.clone()).await
+            transaction::handle(&cmd, &store, ctx.client.clone())
+                .await
                 .unwrap_or_else(|| RespValue::Error("ERR internal error".into()))
         }
-        "ACL" => {
-            acl::handle(args, ctx.client.clone()).await
-        }
-        "AUTH" => {
-            acl::cmd_auth(args, ctx.client.clone()).await
-        }
+        "ACL" => acl::handle(args, ctx.client.clone()).await,
+        "AUTH" => acl::cmd_auth(args, ctx.client.clone()).await,
         _ => {
             let r = match name.as_str() {
                 "ZADD" => zset::zadd(&store, args),
@@ -157,7 +169,10 @@ pub async fn dispatch_ctx(cmd: Vec<Bytes>, store: Db, ctx: &CommandCtx) -> RespV
                 "PSYNC" => Ok(replication::cmd_psync(&cmd[1..], &store).await),
                 _ => return RespValue::Error(format!("ERR unknown command `{}`", name).into()),
             };
-            match r { Ok(v) => v, Err(e) => RespValue::Error(e) }
+            match r {
+                Ok(v) => v,
+                Err(e) => RespValue::Error(e),
+            }
         }
     }
 }

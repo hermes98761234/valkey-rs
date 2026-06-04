@@ -276,7 +276,13 @@ impl ClusterState {
             .iter()
             .filter(|n| n.role == NodeRole::Master)
             .count();
-        let assigned = self.slots.read().unwrap().iter().filter(|s| s.is_some()).count();
+        let assigned = self
+            .slots
+            .read()
+            .unwrap()
+            .iter()
+            .filter(|s| s.is_some())
+            .count();
         let current_epoch = *self.current_epoch.read().unwrap();
         let my_epoch = self.myself.read().unwrap().epoch;
 
@@ -362,12 +368,7 @@ mod tests {
         );
         let state = ClusterState::new(node);
         assert_eq!(state.slots.read().unwrap().len(), NUM_SLOTS);
-        assert!(state
-            .slots
-            .read()
-            .unwrap()
-            .iter()
-            .all(|s| s.is_none()));
+        assert!(state.slots.read().unwrap().iter().all(|s| s.is_none()));
     }
 
     #[test]

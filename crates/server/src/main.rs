@@ -1,3 +1,4 @@
+#![allow(clippy::collapsible_if)]
 use bytes::Bytes;
 use futures::{SinkExt, StreamExt};
 use std::io;
@@ -114,8 +115,8 @@ fn load_tls_config(
     auth_clients: &TlsClientAuth,
 ) -> anyhow::Result<RustlsServerConfig> {
     let cert_file_reader = &mut std::io::BufReader::new(std::fs::File::open(cert_file)?);
-    let certs: Vec<CertificateDer<'static>> = rustls_pemfile::certs(cert_file_reader)
-        .collect::<Result<Vec<_>, _>>()?;
+    let certs: Vec<CertificateDer<'static>> =
+        rustls_pemfile::certs(cert_file_reader).collect::<Result<Vec<_>, _>>()?;
     if certs.is_empty() {
         anyhow::bail!("no certificates found in {}", cert_file.display());
     }
@@ -129,11 +130,12 @@ fn load_tls_config(
     let config = match auth_clients {
         TlsClientAuth::No => builder.with_no_client_auth(),
         TlsClientAuth::Yes | TlsClientAuth::Optional => {
-            let ca_file = ca_cert_file
-                .ok_or_else(|| anyhow::anyhow!("CA cert file required when tls-auth-clients is yes or optional"))?;
+            let ca_file = ca_cert_file.ok_or_else(|| {
+                anyhow::anyhow!("CA cert file required when tls-auth-clients is yes or optional")
+            })?;
             let ca_file_reader = &mut std::io::BufReader::new(std::fs::File::open(ca_file)?);
-            let ca_certs: Vec<CertificateDer<'static>> = rustls_pemfile::certs(ca_file_reader)
-                .collect::<Result<Vec<_>, _>>()?;
+            let ca_certs: Vec<CertificateDer<'static>> =
+                rustls_pemfile::certs(ca_file_reader).collect::<Result<Vec<_>, _>>()?;
             if ca_certs.is_empty() {
                 anyhow::bail!("no CA certificates found in {}", ca_file.display());
             }
@@ -146,8 +148,7 @@ fn load_tls_config(
                     .allow_unauthenticated()
                     .build()?
             } else {
-                rustls::server::WebPkiClientVerifier::builder(Arc::new(root_store))
-                    .build()?
+                rustls::server::WebPkiClientVerifier::builder(Arc::new(root_store)).build()?
             };
             builder.with_client_cert_verifier(verifier)
         }
@@ -212,7 +213,12 @@ where
                 // Propagate to replicas
                 if let Some(ref mgr) = valkey_commands::replication::replication_manager() {
                     let encoded = valkey_replication::leader::encode_repl_command(&cmd_bytes);
-                    mgr.propagate(encoded, cmd_bytes.iter().map(|b| b.len() as u64).sum::<u64>() + (cmd_bytes.len() * 3) as u64).await;
+                    mgr.propagate(
+                        encoded,
+                        cmd_bytes.iter().map(|b| b.len() as u64).sum::<u64>()
+                            + (cmd_bytes.len() * 3) as u64,
+                    )
+                    .await;
                 }
             }
         }
@@ -234,18 +240,57 @@ fn is_write_command(cmd: &[Bytes]) -> bool {
     };
     matches!(
         name.as_str(),
-        "SET" | "SETEX" | "PSETEX" | "SETNX" | "GETSET" | "APPEND"
-            | "INCR" | "DECR" | "INCRBY" | "DECRBY" | "INCRBYFLOAT"
-            | "DEL" | "UNLINK"
-            | "EXPIRE" | "PEXPIRE" | "EXPIREAT" | "PEXPIREAT" | "PERSIST"
-            | "RPUSH" | "LPUSH" | "RPOP" | "LPOP" | "LSET" | "LINSERT" | "LREM" | "LTRIM"
-            | "HSET" | "HDEL" | "HINCRBY" | "HINCRBYFLOAT" | "HMSET"
-            | "SADD" | "SREM" | "SPOP" | "SMOVE"
-            | "ZADD" | "ZREM" | "ZINCRBY" | "ZPOPMIN" | "ZPOPMAX"
-            | "RENAME" | "RENAMENX"
-            | "FLUSHDB" | "FLUSHALL"
-            | "XADD" | "XDEL" | "XTRIM" | "XACK"
-            | "MULTI" | "EXEC" | "DISCARD"
+        "SET"
+            | "SETEX"
+            | "PSETEX"
+            | "SETNX"
+            | "GETSET"
+            | "APPEND"
+            | "INCR"
+            | "DECR"
+            | "INCRBY"
+            | "DECRBY"
+            | "INCRBYFLOAT"
+            | "DEL"
+            | "UNLINK"
+            | "EXPIRE"
+            | "PEXPIRE"
+            | "EXPIREAT"
+            | "PEXPIREAT"
+            | "PERSIST"
+            | "RPUSH"
+            | "LPUSH"
+            | "RPOP"
+            | "LPOP"
+            | "LSET"
+            | "LINSERT"
+            | "LREM"
+            | "LTRIM"
+            | "HSET"
+            | "HDEL"
+            | "HINCRBY"
+            | "HINCRBYFLOAT"
+            | "HMSET"
+            | "SADD"
+            | "SREM"
+            | "SPOP"
+            | "SMOVE"
+            | "ZADD"
+            | "ZREM"
+            | "ZINCRBY"
+            | "ZPOPMIN"
+            | "ZPOPMAX"
+            | "RENAME"
+            | "RENAMENX"
+            | "FLUSHDB"
+            | "FLUSHALL"
+            | "XADD"
+            | "XDEL"
+            | "XTRIM"
+            | "XACK"
+            | "MULTI"
+            | "EXEC"
+            | "DISCARD"
     )
 }
 
@@ -295,7 +340,10 @@ async fn main() -> anyhow::Result<()> {
     let repl_state = valkey_replication::ReplicaState::new();
     let repl_mgr = valkey_replication::ReplicationManager::new(Arc::clone(&store));
     valkey_commands::replication::init_replication(Some(repl_mgr.clone()), Arc::clone(&repl_state));
-    info!("Replication manager initialized: repl_id={}", repl_mgr.repl_id());
+    info!(
+        "Replication manager initialized: repl_id={}",
+        repl_mgr.repl_id()
+    );
 
     // Auto-save background task
     let auto_store = Arc::clone(&store);
@@ -304,7 +352,9 @@ async fn main() -> anyhow::Result<()> {
         loop {
             interval.tick().await;
             let dirty = auto_store.dirty_count();
-            if dirty == 0 { continue; }
+            if dirty == 0 {
+                continue;
+            }
             let rdb_path = PathBuf::from("./dump.rdb");
             if let Err(e) = valkey_persistence::rdb::save(&auto_store, &rdb_path).await {
                 warn!("auto-save failed: {e}");
@@ -316,12 +366,17 @@ async fn main() -> anyhow::Result<()> {
 
     // TLS configuration (optional — set via env vars)
     let tls_config = if let (Some(port), Some(cert), Some(key)) = (
-        std::env::var("TLS_PORT").ok().and_then(|p| p.parse::<u16>().ok()),
+        std::env::var("TLS_PORT")
+            .ok()
+            .and_then(|p| p.parse::<u16>().ok()),
         std::env::var("TLS_CERT").ok().map(PathBuf::from),
         std::env::var("TLS_KEY").ok().map(PathBuf::from),
     ) {
         let ca_cert = std::env::var("TLS_CA_CERT").ok().map(PathBuf::from);
-        let auth = match std::env::var("TLS_AUTH_CLIENTS").unwrap_or_else(|_| "no".into()).as_str() {
+        let auth = match std::env::var("TLS_AUTH_CLIENTS")
+            .unwrap_or_else(|_| "no".into())
+            .as_str()
+        {
             "yes" => TlsClientAuth::Yes,
             "optional" => TlsClientAuth::Optional,
             _ => TlsClientAuth::No,
@@ -361,8 +416,12 @@ async fn main() -> anyhow::Result<()> {
                                         tokio::spawn(async move {
                                             match acceptor.accept(stream).await {
                                                 Ok(tls_stream) => {
-                                                    let client_stream = ClientStream::Tls(Box::new(tls_stream));
-                                                    if let Err(e) = handle_connection(client_stream, store).await {
+                                                    let client_stream =
+                                                        ClientStream::Tls(Box::new(tls_stream));
+                                                    if let Err(e) =
+                                                        handle_connection(client_stream, store)
+                                                            .await
+                                                    {
                                                         tracing::warn!(%peer, error = %e, "TLS connection error");
                                                     }
                                                 }
@@ -380,7 +439,10 @@ async fn main() -> anyhow::Result<()> {
                         });
                     }
                     Err(e) => {
-                        warn!("Failed to bind TLS listener on port {}: {}", tls_cfg.port, e);
+                        warn!(
+                            "Failed to bind TLS listener on port {}: {}",
+                            tls_cfg.port, e
+                        );
                     }
                 }
             }

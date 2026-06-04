@@ -2,13 +2,13 @@
 /// Tests 3-node cluster formation, slot assignment, and MOVED/ASK redirects.
 #[cfg(test)]
 mod integration_tests {
+    use bytes::Bytes;
+    use std::sync::Arc;
     use valkey_cluster::commands::{ClusterCommandHandler, ClusterRouter, RouteAction};
     use valkey_cluster::slots::key_hash_slot;
     use valkey_cluster::state::{
         generate_node_id, ClusterState, NodeFlags, NodeInfo, NodeRole, SlotRange, NUM_SLOTS,
     };
-    use bytes::Bytes;
-    use std::sync::Arc;
 
     /// Simulate a 3-node cluster with slot assignments.
     /// Node A: slots 0-5460
@@ -97,68 +97,38 @@ mod integration_tests {
         };
 
         // Add nodes to each other's node tables
-        state_a.add_node(
-            b_id.clone(),
-            b_addr.clone(),
-            NodeRole::Master,
-            {
-                let mut f = NodeFlags::default();
-                f.master = true;
-                f
-            },
-        );
-        state_a.add_node(
-            c_id.clone(),
-            c_addr.clone(),
-            NodeRole::Master,
-            {
-                let mut f = NodeFlags::default();
-                f.master = true;
-                f
-            },
-        );
+        state_a.add_node(b_id.clone(), b_addr.clone(), NodeRole::Master, {
+            let mut f = NodeFlags::default();
+            f.master = true;
+            f
+        });
+        state_a.add_node(c_id.clone(), c_addr.clone(), NodeRole::Master, {
+            let mut f = NodeFlags::default();
+            f.master = true;
+            f
+        });
 
-        state_b.add_node(
-            a_id.clone(),
-            port(base_port, 0),
-            NodeRole::Master,
-            {
-                let mut f = NodeFlags::default();
-                f.master = true;
-                f
-            },
-        );
-        state_b.add_node(
-            c_id.clone(),
-            c_addr.clone(),
-            NodeRole::Master,
-            {
-                let mut f = NodeFlags::default();
-                f.master = true;
-                f
-            },
-        );
+        state_b.add_node(a_id.clone(), port(base_port, 0), NodeRole::Master, {
+            let mut f = NodeFlags::default();
+            f.master = true;
+            f
+        });
+        state_b.add_node(c_id.clone(), c_addr.clone(), NodeRole::Master, {
+            let mut f = NodeFlags::default();
+            f.master = true;
+            f
+        });
 
-        state_c.add_node(
-            a_id.clone(),
-            port(base_port, 0),
-            NodeRole::Master,
-            {
-                let mut f = NodeFlags::default();
-                f.master = true;
-                f
-            },
-        );
-        state_c.add_node(
-            b_id.clone(),
-            b_addr.clone(),
-            NodeRole::Master,
-            {
-                let mut f = NodeFlags::default();
-                f.master = true;
-                f
-            },
-        );
+        state_c.add_node(a_id.clone(), port(base_port, 0), NodeRole::Master, {
+            let mut f = NodeFlags::default();
+            f.master = true;
+            f
+        });
+        state_c.add_node(b_id.clone(), b_addr.clone(), NodeRole::Master, {
+            let mut f = NodeFlags::default();
+            f.master = true;
+            f
+        });
 
         // Assign slots
         // Node A: 0-5460

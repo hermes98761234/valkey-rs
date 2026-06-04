@@ -154,14 +154,24 @@ impl ServerConfig {
                     .map_err(|_| "ERR invalid maxmemory value")?;
             }
             "maxmemory-policy" => {
-                let valid = ["noeviction", "allkeys-lru", "volatile-lru", "allkeys-random",
-                    "volatile-random", "volatile-ttl", "allkeys-lfu", "volatile-lfu"];
+                let valid = [
+                    "noeviction",
+                    "allkeys-lru",
+                    "volatile-lru",
+                    "allkeys-random",
+                    "volatile-random",
+                    "volatile-ttl",
+                    "allkeys-lfu",
+                    "volatile-lfu",
+                ];
                 if !valid.contains(&value.to_ascii_lowercase().as_str()) {
                     return Err("ERR invalid maxmemory policy".into());
                 }
             }
             "maxmemory-samples" => {
-                let n: u8 = value.parse().map_err(|_| "ERR invalid maxmemory-samples value")?;
+                let n: u8 = value
+                    .parse()
+                    .map_err(|_| "ERR invalid maxmemory-samples value")?;
                 if n == 0 {
                     return Err("ERR maxmemory-samples must be > 0".into());
                 }
@@ -214,10 +224,9 @@ pub async fn handle(
         _ => {
             // All other commands require at least one argument
             if args.len() < 2 {
-                return RespValue::Error(format!(
-                    "ERR wrong number of arguments for '{}' command",
-                    cmd_name
-                ).into());
+                return RespValue::Error(
+                    format!("ERR wrong number of arguments for '{}' command", cmd_name).into(),
+                );
             }
             match cmd_name.as_str() {
                 "ECHO" => cmd_echo(args).await,
@@ -277,17 +286,9 @@ async fn cmd_select(args: &[Bytes], client: Arc<RwLock<ClientCtx>>) -> RespValue
     let index: usize = match std::str::from_utf8(&args[0]) {
         Ok(s) => match s.parse() {
             Ok(v) => v,
-            Err(_) => {
-                return RespValue::Error(
-                    "ERR invalid DB index".into(),
-                )
-            }
+            Err(_) => return RespValue::Error("ERR invalid DB index".into()),
         },
-        Err(_) => {
-            return RespValue::Error(
-                "ERR invalid DB index".into(),
-            )
-        }
+        Err(_) => return RespValue::Error("ERR invalid DB index".into()),
     };
     // Single keyspace for now — accept any index but don't actually switch
     let mut ctx = client.write().unwrap();
@@ -479,7 +480,11 @@ async fn cmd_info(args: &[Bytes]) -> RespValue {
              clients_in_timeout_table:{}\r\n\
              total_blocking_keys:0\r\n\
              total_blocking_keys_on_nokey:0",
-            connected_clients, maxclients, blocked_clients, tracking_clients, clients_in_timeout_table
+            connected_clients,
+            maxclients,
+            blocked_clients,
+            tracking_clients,
+            clients_in_timeout_table
         ),
         "MEMORY" => format!(
             "# Memory\r\n\
@@ -523,7 +528,11 @@ async fn cmd_info(args: &[Bytes]) -> RespValue {
              active_defrag_running:0\r\n\
              lazyfree_pending_objects:0\r\n\
              lazyfreed_objects:0",
-            used_memory, used_memory_human, used_memory, used_memory_human, used_memory / 2
+            used_memory,
+            used_memory_human,
+            used_memory,
+            used_memory_human,
+            used_memory / 2
         ),
         "STATS" => format!(
             "# Stats\r\n\
@@ -625,10 +634,12 @@ async fn cmd_info(args: &[Bytes]) -> RespValue {
         ),
         "KEYSPACE" => format!(
             "# Keyspace\r\n\
-             db0:keys={}", 0
+             db0:keys={}",
+            0
         ),
         _ =>
-            // default — return all sections
+        // default — return all sections
+        {
             format!(
                 "# Server\r\n\
                  redis_version:7.0.0-valkey-rs\r\n\
@@ -826,7 +837,8 @@ async fn cmd_info(args: &[Bytes]) -> RespValue {
                 used_cpu_sys_main_thread,
                 used_cpu_user_main_thread,
                 0
-            ),
+            )
+        }
     };
     RespValue::BulkString(Some(Bytes::from(s)))
 }
@@ -842,9 +854,7 @@ async fn cmd_command(
     _config: Arc<RwLock<ServerConfig>>,
 ) -> RespValue {
     if args.is_empty() {
-        return RespValue::Error(
-            "ERR wrong number of arguments for 'command' command".into(),
-        );
+        return RespValue::Error("ERR wrong number of arguments for 'command' command".into());
     }
     let sub = match std::str::from_utf8(&args[0]) {
         Ok(s) => s.to_ascii_uppercase(),
@@ -911,46 +921,286 @@ struct CommandDesc {
 }
 
 const COMMANDS: &[CommandDesc] = &[
-    CommandDesc { name: "PING", arity: -1, first_key: 0, last_key: 0, key_step: 0 },
-    CommandDesc { name: "ECHO", arity: 2, first_key: 0, last_key: 0, key_step: 0 },
-    CommandDesc { name: "SELECT", arity: 2, first_key: 0, last_key: 0, key_step: 0 },
-    CommandDesc { name: "DBSIZE", arity: 1, first_key: 0, last_key: 0, key_step: 0 },
-    CommandDesc { name: "FLUSHDB", arity: -1, first_key: 0, last_key: 0, key_step: 0 },
-    CommandDesc { name: "FLUSHALL", arity: -1, first_key: 0, last_key: 0, key_step: 0 },
-    CommandDesc { name: "INFO", arity: -1, first_key: 0, last_key: 0, key_step: 0 },
-    CommandDesc { name: "COMMAND", arity: -1, first_key: 0, last_key: 0, key_step: 0 },
-    CommandDesc { name: "CONFIG", arity: -1, first_key: 0, last_key: 0, key_step: 0 },
-    CommandDesc { name: "SAVE", arity: 1, first_key: 0, last_key: 0, key_step: 0 },
-    CommandDesc { name: "BGSAVE", arity: 1, first_key: 0, last_key: 0, key_step: 0 },
-    CommandDesc { name: "BGREWRITEAOF", arity: 1, first_key: 0, last_key: 0, key_step: 0 },
-    CommandDesc { name: "LASTSAVE", arity: 1, first_key: 0, last_key: 0, key_step: 0 },
-    CommandDesc { name: "TIME", arity: 1, first_key: 0, last_key: 0, key_step: 0 },
-    CommandDesc { name: "LATENCY", arity: -1, first_key: 0, last_key: 0, key_step: 0 },
-    CommandDesc { name: "SLOWLOG", arity: -1, first_key: 0, last_key: 0, key_step: 0 },
-    CommandDesc { name: "MEMORY", arity: -1, first_key: 0, last_key: 0, key_step: 0 },
-    CommandDesc { name: "CLIENT", arity: -1, first_key: 0, last_key: 0, key_step: 0 },
-    CommandDesc { name: "DEBUG", arity: -1, first_key: 0, last_key: 0, key_step: 0 },
-    CommandDesc { name: "OBJECT", arity: -1, first_key: 0, last_key: 0, key_step: 0 },
-    CommandDesc { name: "RESET", arity: 1, first_key: 0, last_key: 0, key_step: 0 },
-    CommandDesc { name: "GET", arity: 2, first_key: 1, last_key: 1, key_step: 1 },
-    CommandDesc { name: "SET", arity: -3, first_key: 1, last_key: 1, key_step: 1 },
-    CommandDesc { name: "DEL", arity: -2, first_key: 1, last_key: -1, key_step: 1 },
-    CommandDesc { name: "EXISTS", arity: -2, first_key: 1, last_key: -1, key_step: 1 },
-    CommandDesc { name: "TYPE", arity: 2, first_key: 1, last_key: 1, key_step: 1 },
-    CommandDesc { name: "LPUSH", arity: -3, first_key: 1, last_key: 1, key_step: 1 },
-    CommandDesc { name: "RPUSH", arity: -3, first_key: 1, last_key: 1, key_step: 1 },
-    CommandDesc { name: "LPOP", arity: -2, first_key: 1, last_key: 1, key_step: 1 },
-    CommandDesc { name: "RPOP", arity: -2, first_key: 1, last_key: 1, key_step: 1 },
-    CommandDesc { name: "LRANGE", arity: 4, first_key: 1, last_key: 1, key_step: 1 },
-    CommandDesc { name: "HSET", arity: -4, first_key: 1, last_key: 1, key_step: 1 },
-    CommandDesc { name: "HGET", arity: 3, first_key: 1, last_key: 1, key_step: 1 },
-    CommandDesc { name: "HGETALL", arity: 2, first_key: 1, last_key: 1, key_step: 1 },
-    CommandDesc { name: "SADD", arity: -3, first_key: 1, last_key: 1, key_step: 1 },
-    CommandDesc { name: "SMEMBERS", arity: 2, first_key: 1, last_key: 1, key_step: 1 },
-    CommandDesc { name: "SISMEMBER", arity: 3, first_key: 1, last_key: 1, key_step: 1 },
-    CommandDesc { name: "ZADD", arity: -4, first_key: 1, last_key: 1, key_step: 1 },
-    CommandDesc { name: "ZRANGE", arity: -4, first_key: 1, last_key: 1, key_step: 1 },
-    CommandDesc { name: "ZSCORE", arity: 3, first_key: 1, last_key: 1, key_step: 1 },
+    CommandDesc {
+        name: "PING",
+        arity: -1,
+        first_key: 0,
+        last_key: 0,
+        key_step: 0,
+    },
+    CommandDesc {
+        name: "ECHO",
+        arity: 2,
+        first_key: 0,
+        last_key: 0,
+        key_step: 0,
+    },
+    CommandDesc {
+        name: "SELECT",
+        arity: 2,
+        first_key: 0,
+        last_key: 0,
+        key_step: 0,
+    },
+    CommandDesc {
+        name: "DBSIZE",
+        arity: 1,
+        first_key: 0,
+        last_key: 0,
+        key_step: 0,
+    },
+    CommandDesc {
+        name: "FLUSHDB",
+        arity: -1,
+        first_key: 0,
+        last_key: 0,
+        key_step: 0,
+    },
+    CommandDesc {
+        name: "FLUSHALL",
+        arity: -1,
+        first_key: 0,
+        last_key: 0,
+        key_step: 0,
+    },
+    CommandDesc {
+        name: "INFO",
+        arity: -1,
+        first_key: 0,
+        last_key: 0,
+        key_step: 0,
+    },
+    CommandDesc {
+        name: "COMMAND",
+        arity: -1,
+        first_key: 0,
+        last_key: 0,
+        key_step: 0,
+    },
+    CommandDesc {
+        name: "CONFIG",
+        arity: -1,
+        first_key: 0,
+        last_key: 0,
+        key_step: 0,
+    },
+    CommandDesc {
+        name: "SAVE",
+        arity: 1,
+        first_key: 0,
+        last_key: 0,
+        key_step: 0,
+    },
+    CommandDesc {
+        name: "BGSAVE",
+        arity: 1,
+        first_key: 0,
+        last_key: 0,
+        key_step: 0,
+    },
+    CommandDesc {
+        name: "BGREWRITEAOF",
+        arity: 1,
+        first_key: 0,
+        last_key: 0,
+        key_step: 0,
+    },
+    CommandDesc {
+        name: "LASTSAVE",
+        arity: 1,
+        first_key: 0,
+        last_key: 0,
+        key_step: 0,
+    },
+    CommandDesc {
+        name: "TIME",
+        arity: 1,
+        first_key: 0,
+        last_key: 0,
+        key_step: 0,
+    },
+    CommandDesc {
+        name: "LATENCY",
+        arity: -1,
+        first_key: 0,
+        last_key: 0,
+        key_step: 0,
+    },
+    CommandDesc {
+        name: "SLOWLOG",
+        arity: -1,
+        first_key: 0,
+        last_key: 0,
+        key_step: 0,
+    },
+    CommandDesc {
+        name: "MEMORY",
+        arity: -1,
+        first_key: 0,
+        last_key: 0,
+        key_step: 0,
+    },
+    CommandDesc {
+        name: "CLIENT",
+        arity: -1,
+        first_key: 0,
+        last_key: 0,
+        key_step: 0,
+    },
+    CommandDesc {
+        name: "DEBUG",
+        arity: -1,
+        first_key: 0,
+        last_key: 0,
+        key_step: 0,
+    },
+    CommandDesc {
+        name: "OBJECT",
+        arity: -1,
+        first_key: 0,
+        last_key: 0,
+        key_step: 0,
+    },
+    CommandDesc {
+        name: "RESET",
+        arity: 1,
+        first_key: 0,
+        last_key: 0,
+        key_step: 0,
+    },
+    CommandDesc {
+        name: "GET",
+        arity: 2,
+        first_key: 1,
+        last_key: 1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "SET",
+        arity: -3,
+        first_key: 1,
+        last_key: 1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "DEL",
+        arity: -2,
+        first_key: 1,
+        last_key: -1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "EXISTS",
+        arity: -2,
+        first_key: 1,
+        last_key: -1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "TYPE",
+        arity: 2,
+        first_key: 1,
+        last_key: 1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "LPUSH",
+        arity: -3,
+        first_key: 1,
+        last_key: 1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "RPUSH",
+        arity: -3,
+        first_key: 1,
+        last_key: 1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "LPOP",
+        arity: -2,
+        first_key: 1,
+        last_key: 1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "RPOP",
+        arity: -2,
+        first_key: 1,
+        last_key: 1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "LRANGE",
+        arity: 4,
+        first_key: 1,
+        last_key: 1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "HSET",
+        arity: -4,
+        first_key: 1,
+        last_key: 1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "HGET",
+        arity: 3,
+        first_key: 1,
+        last_key: 1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "HGETALL",
+        arity: 2,
+        first_key: 1,
+        last_key: 1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "SADD",
+        arity: -3,
+        first_key: 1,
+        last_key: 1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "SMEMBERS",
+        arity: 2,
+        first_key: 1,
+        last_key: 1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "SISMEMBER",
+        arity: 3,
+        first_key: 1,
+        last_key: 1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "ZADD",
+        arity: -4,
+        first_key: 1,
+        last_key: 1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "ZRANGE",
+        arity: -4,
+        first_key: 1,
+        last_key: 1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "ZSCORE",
+        arity: 3,
+        first_key: 1,
+        last_key: 1,
+        key_step: 1,
+    },
 ];
 
 fn command_descriptor(c: &CommandDesc) -> RespValue {
@@ -968,7 +1218,11 @@ fn command_descriptor(c: &CommandDesc) -> RespValue {
 // CONFIG
 // ---------------------------------------------------------------------------
 
-async fn cmd_config(args: &[Bytes], config: Arc<RwLock<ServerConfig>>, store: &Arc<Store>) -> RespValue {
+async fn cmd_config(
+    args: &[Bytes],
+    config: Arc<RwLock<ServerConfig>>,
+    store: &Arc<Store>,
+) -> RespValue {
     if args.is_empty() {
         return RespValue::Error("ERR wrong number of arguments for 'config' command".into());
     }
@@ -998,12 +1252,21 @@ async fn cmd_config_get(args: &[Bytes], config: Arc<RwLock<ServerConfig>>) -> Re
     let entries = cfg.get(pattern);
     let items: Vec<RespValue> = entries
         .iter()
-        .flat_map(|(k, v)| vec![RespValue::bulk(Bytes::from(k.clone())), RespValue::bulk(Bytes::from(v.clone()))])
+        .flat_map(|(k, v)| {
+            vec![
+                RespValue::bulk(Bytes::from(k.clone())),
+                RespValue::bulk(Bytes::from(v.clone())),
+            ]
+        })
         .collect();
     RespValue::array(items)
 }
 
-async fn cmd_config_set(args: &[Bytes], config: Arc<RwLock<ServerConfig>>, store: &Arc<Store>) -> RespValue {
+async fn cmd_config_set(
+    args: &[Bytes],
+    config: Arc<RwLock<ServerConfig>>,
+    store: &Arc<Store>,
+) -> RespValue {
     if args.len() < 2 {
         return RespValue::Error("ERR wrong number of arguments for 'config|set' command".into());
     }
@@ -1018,10 +1281,23 @@ async fn cmd_config_set(args: &[Bytes], config: Arc<RwLock<ServerConfig>>, store
     let mut cfg = config.write().unwrap();
     match cfg.set(param, value) {
         Ok(()) => {
-            let maxmemory: u64 = cfg.get("maxmemory").first().map(|(_, v)| v.parse().unwrap_or(0)).unwrap_or(0);
-            let policy_str = cfg.get("maxmemory-policy").first().map(|(_, v)| v.clone()).unwrap_or_else(|| "noeviction".into());
-            let samples: u8 = cfg.get("maxmemory-samples").first().map(|(_, v)| v.parse().unwrap_or(5)).unwrap_or(5);
-            let policy = valkey_storage::EvictionPolicy::from_str(&policy_str).unwrap_or(valkey_storage::EvictionPolicy::Noeviction);
+            let maxmemory: u64 = cfg
+                .get("maxmemory")
+                .first()
+                .map(|(_, v)| v.parse().unwrap_or(0))
+                .unwrap_or(0);
+            let policy_str = cfg
+                .get("maxmemory-policy")
+                .first()
+                .map(|(_, v)| v.clone())
+                .unwrap_or_else(|| "noeviction".into());
+            let samples: u8 = cfg
+                .get("maxmemory-samples")
+                .first()
+                .map(|(_, v)| v.parse().unwrap_or(5))
+                .unwrap_or(5);
+            let policy = valkey_storage::EvictionPolicy::from_policy_str(&policy_str)
+                .unwrap_or(valkey_storage::EvictionPolicy::Noeviction);
             store.set_eviction_config(valkey_storage::EvictionConfig {
                 maxmemory,
                 policy,
@@ -1060,7 +1336,11 @@ async fn cmd_config_help(_args: &[Bytes]) -> RespValue {
 // SAVE
 // ---------------------------------------------------------------------------
 
-async fn cmd_save(args: &[Bytes], store: &Arc<Store>, config: Arc<RwLock<ServerConfig>>) -> RespValue {
+async fn cmd_save(
+    args: &[Bytes],
+    store: &Arc<Store>,
+    config: Arc<RwLock<ServerConfig>>,
+) -> RespValue {
     if !args.is_empty() {
         return RespValue::Error("ERR wrong number of arguments for 'save' command".into());
     }
@@ -1071,7 +1351,11 @@ async fn cmd_save(args: &[Bytes], store: &Arc<Store>, config: Arc<RwLock<ServerC
     }
 }
 
-async fn cmd_bgsave(args: &[Bytes], store: &Arc<Store>, config: Arc<RwLock<ServerConfig>>) -> RespValue {
+async fn cmd_bgsave(
+    args: &[Bytes],
+    store: &Arc<Store>,
+    config: Arc<RwLock<ServerConfig>>,
+) -> RespValue {
     if !args.is_empty() {
         return RespValue::Error("ERR wrong number of arguments for 'bgsave' command".into());
     }
@@ -1101,9 +1385,7 @@ async fn cmd_lastsave(_args: &[Bytes]) -> RespValue {
 // ---------------------------------------------------------------------------
 
 async fn cmd_time(_args: &[Bytes]) -> RespValue {
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap();
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
     let secs = now.as_secs();
     let micros = now.subsec_micros();
     RespValue::array(vec![
@@ -1166,7 +1448,9 @@ async fn cmd_memory(args: &[Bytes], store: &Arc<Store>) -> RespValue {
     match sub.as_str() {
         "USAGE" => {
             if args.len() < 2 {
-                return RespValue::Error("ERR wrong number of arguments for 'memory|usage' command".into());
+                return RespValue::Error(
+                    "ERR wrong number of arguments for 'memory|usage' command".into(),
+                );
             }
             let key = &args[1];
             match store.key_memory_usage(key) {
@@ -1278,13 +1562,9 @@ async fn cmd_client_pause(args: &[Bytes]) -> RespValue {
     let timeout: u64 = match std::str::from_utf8(&args[0]) {
         Ok(s) => match s.parse() {
             Ok(v) => v,
-            Err(_) => {
-                return RespValue::Error("ERR timeout is not a valid integer".into())
-            }
+            Err(_) => return RespValue::Error("ERR timeout is not a valid integer".into()),
         },
-        Err(_) => {
-            return RespValue::Error("ERR timeout is not a valid integer".into())
-        }
+        Err(_) => return RespValue::Error("ERR timeout is not a valid integer".into()),
     };
     let _ = timeout;
     RespValue::ok()
@@ -1296,7 +1576,9 @@ async fn cmd_client_unpause(_args: &[Bytes]) -> RespValue {
 
 async fn cmd_client_no_evict(args: &[Bytes], client: Arc<RwLock<ClientCtx>>) -> RespValue {
     if args.len() != 1 {
-        return RespValue::Error("ERR wrong number of arguments for 'client|no-evict' command".into());
+        return RespValue::Error(
+            "ERR wrong number of arguments for 'client|no-evict' command".into(),
+        );
     }
     let val = match std::str::from_utf8(&args[0]) {
         Ok(s) => s.to_ascii_lowercase(),
@@ -1309,7 +1591,9 @@ async fn cmd_client_no_evict(args: &[Bytes], client: Arc<RwLock<ClientCtx>>) -> 
 
 async fn cmd_client_no_touch(args: &[Bytes], client: Arc<RwLock<ClientCtx>>) -> RespValue {
     if args.len() != 1 {
-        return RespValue::Error("ERR wrong number of arguments for 'client|no-touch' command".into());
+        return RespValue::Error(
+            "ERR wrong number of arguments for 'client|no-touch' command".into(),
+        );
     }
     let val = match std::str::from_utf8(&args[0]) {
         Ok(s) => s.to_ascii_lowercase(),
@@ -1362,33 +1646,64 @@ async fn cmd_debug(args: &[Bytes]) -> RespValue {
             let secs: f64 = match std::str::from_utf8(&args[1]) {
                 Ok(s) => match s.parse() {
                     Ok(v) => v,
-                    Err(_) => {
-                        return RespValue::Error(
-                            "ERR invalid sleep time".into(),
-                        )
-                    }
+                    Err(_) => return RespValue::Error("ERR invalid sleep time".into()),
                 },
-                Err(_) => {
-                    return RespValue::Error(
-                        "ERR invalid sleep time".into(),
-                    )
-                }
+                Err(_) => return RespValue::Error("ERR invalid sleep time".into()),
             };
             let dur = std::time::Duration::from_secs_f64(secs);
             tokio::time::sleep(dur).await;
             RespValue::ok()
         }
-        "RELOAD" | "OBJECT" | "JMAP" | "SET-ACTIVE-EXPIRE" | "HELP" | "AOF-FLUSH" | "PANIC"
-        | "LOG" | "STRUCTSIZE" | "PROTOCOL" | "POPULATE" | "SDSLEN" | "ZIPLIST" | "REPLICATE"
-        | "DIGEST" | "DIGEST-VALUE" | "ERROR" | "LEAK" | "OOM" | "SEGFAULT" | "MKILL"
-        | "ASSERT" | "ASSERT-WITH-META" | "WEIGHTED-KEYS" | "GET-SERVER-TIME" | "RESTART"
-        | "PROTECTED-OBJECT" | "DISABLE-KEYED-HASH-CACHE" | "SWAPDB" | "HTSTATS" | "HTSTATS-KEY"
-        | "CHANGE-REPL-ID" | "EXPIRE-PEEK" | "EXPIRE-AFTER" | "EXPIRE-BEFORE" | "EXPIRE-AT"
-        | "EXPIRE-AT-KEY" | "EXPIRE-AT-PEEK" | "EXPIRE-AT-AFTER" | "EXPIRE-AT-BEFORE"
-        | "EXPIRE-AT-KEY-AFTER" | "EXPIRE-AT-KEY-BEFORE" | "EXPIRE-AT-KEY-PEEK"
-        | "EXPIRE-AT-KEY-PEEK-AFTER" | "EXPIRE-AT-KEY-PEEK-BEFORE" | "EXPIRE-AT-KEY-PEEK-AT"
-        | "EXPIRE-AT-KEY-PEEK-AT-AFTER" | "EXPIRE-AT-KEY-PEEK-AT-BEFORE"
-        | "EXPIRE-AT-KEY-PEEK-AT-PEEK" | "EXPIRE-AT-KEY-PEEK-AT-PEEK-AFTER"
+        "RELOAD"
+        | "OBJECT"
+        | "JMAP"
+        | "SET-ACTIVE-EXPIRE"
+        | "HELP"
+        | "AOF-FLUSH"
+        | "PANIC"
+        | "LOG"
+        | "STRUCTSIZE"
+        | "PROTOCOL"
+        | "POPULATE"
+        | "SDSLEN"
+        | "ZIPLIST"
+        | "REPLICATE"
+        | "DIGEST"
+        | "DIGEST-VALUE"
+        | "ERROR"
+        | "LEAK"
+        | "OOM"
+        | "SEGFAULT"
+        | "MKILL"
+        | "ASSERT"
+        | "ASSERT-WITH-META"
+        | "WEIGHTED-KEYS"
+        | "GET-SERVER-TIME"
+        | "RESTART"
+        | "PROTECTED-OBJECT"
+        | "DISABLE-KEYED-HASH-CACHE"
+        | "SWAPDB"
+        | "HTSTATS"
+        | "HTSTATS-KEY"
+        | "CHANGE-REPL-ID"
+        | "EXPIRE-PEEK"
+        | "EXPIRE-AFTER"
+        | "EXPIRE-BEFORE"
+        | "EXPIRE-AT"
+        | "EXPIRE-AT-KEY"
+        | "EXPIRE-AT-PEEK"
+        | "EXPIRE-AT-AFTER"
+        | "EXPIRE-AT-BEFORE"
+        | "EXPIRE-AT-KEY-AFTER"
+        | "EXPIRE-AT-KEY-BEFORE"
+        | "EXPIRE-AT-KEY-PEEK"
+        | "EXPIRE-AT-KEY-PEEK-AFTER"
+        | "EXPIRE-AT-KEY-PEEK-BEFORE"
+        | "EXPIRE-AT-KEY-PEEK-AT"
+        | "EXPIRE-AT-KEY-PEEK-AT-AFTER"
+        | "EXPIRE-AT-KEY-PEEK-AT-BEFORE"
+        | "EXPIRE-AT-KEY-PEEK-AT-PEEK"
+        | "EXPIRE-AT-KEY-PEEK-AT-PEEK-AFTER"
         | "EXPIRE-AT-KEY-PEEK-AT-PEEK-BEFORE" => RespValue::ok(),
         _ => RespValue::Error(format!("ERR unknown subcommand `{}`", sub)),
     }
@@ -1682,12 +1997,7 @@ mod tests {
     async fn test_config_set_invalid_port() {
         let config = Arc::new(RwLock::new(ServerConfig::default()));
         let store = valkey_storage::Store::new();
-        let r = cmd_config_set(
-            &[Bytes::from("port"), Bytes::from("abc")],
-            config,
-            &store,
-        )
-        .await;
+        let r = cmd_config_set(&[Bytes::from("port"), Bytes::from("abc")], config, &store).await;
         assert!(matches!(r, RespValue::Error(_)));
     }
 

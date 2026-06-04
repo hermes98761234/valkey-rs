@@ -52,7 +52,9 @@ impl HGet {
     }
 
     pub fn execute(&self, store: &HashStore) -> Option<Bytes> {
-        store.get(&self.key).and_then(|e| e.get(&self.field).cloned())
+        store
+            .get(&self.key)
+            .and_then(|e| e.get(&self.field).cloned())
     }
 }
 
@@ -244,7 +246,11 @@ pub struct HIncrBy {
 
 impl HIncrBy {
     pub fn new(key: Bytes, field: Bytes, increment: i64) -> Self {
-        Self { key, field, increment }
+        Self {
+            key,
+            field,
+            increment,
+        }
     }
 
     pub fn execute(&self, store: &HashStore) -> Result<i64, String> {
@@ -271,7 +277,11 @@ pub struct HIncrByFloat {
 
 impl HIncrByFloat {
     pub fn new(key: Bytes, field: Bytes, increment: f64) -> Self {
-        Self { key, field, increment }
+        Self {
+            key,
+            field,
+            increment,
+        }
     }
 
     pub fn execute(&self, store: &HashStore) -> Result<Bytes, String> {
@@ -300,7 +310,12 @@ pub struct HScan {
 
 impl HScan {
     pub fn new(key: Bytes, cursor: usize, pattern: Option<Bytes>, count: usize) -> Self {
-        Self { key, cursor, pattern, count: count.max(1) }
+        Self {
+            key,
+            cursor,
+            pattern,
+            count: count.max(1),
+        }
     }
 
     pub fn execute(&self, store: &HashStore) -> (usize, Vec<Bytes>) {
@@ -317,18 +332,21 @@ impl HScan {
                     Ok(s) => s.to_string(),
                     Err(_) => return (0, Vec::new()),
                 };
-                sorted.into_iter().filter(|(k, _)| {
-                    let ks = std::str::from_utf8(k).unwrap_or("");
-                    if pat_str.starts_with('*') && pat_str.ends_with('*') {
-                        ks.contains(&pat_str[1..pat_str.len()-1])
-                    } else if pat_str.starts_with('*') {
-                        ks.ends_with(&pat_str[1..])
-                    } else if pat_str.ends_with('*') {
-                        ks.starts_with(&pat_str[..pat_str.len()-1])
-                    } else {
-                        ks == pat_str
-                    }
-                }).collect()
+                sorted
+                    .into_iter()
+                    .filter(|(k, _)| {
+                        let ks = std::str::from_utf8(k).unwrap_or("");
+                        if pat_str.starts_with('*') && pat_str.ends_with('*') {
+                            ks.contains(&pat_str[1..pat_str.len() - 1])
+                        } else if pat_str.starts_with('*') {
+                            ks.ends_with(&pat_str[1..])
+                        } else if pat_str.ends_with('*') {
+                            ks.starts_with(&pat_str[..pat_str.len() - 1])
+                        } else {
+                            ks == pat_str
+                        }
+                    })
+                    .collect()
             }
             _ => sorted,
         };
@@ -356,7 +374,11 @@ pub struct HRandField {
 
 impl HRandField {
     pub fn new(key: Bytes, count: i64, with_values: bool) -> Self {
-        Self { key, count, with_values }
+        Self {
+            key,
+            count,
+            with_values,
+        }
     }
 
     pub fn execute(&self, store: &HashStore) -> Vec<Bytes> {
@@ -445,18 +467,26 @@ pub fn handle(cmd: &[Bytes]) -> RespValue {
         }
         "HMGET" => {
             if args.len() < 2 {
-                return RespValue::Error("ERR wrong number of arguments for 'hmget' command".into());
+                return RespValue::Error(
+                    "ERR wrong number of arguments for 'hmget' command".into(),
+                );
             }
             let fields: Vec<Bytes> = args[1..].to_vec();
             let r = HMGet::new(args[0].clone(), fields).execute(store);
-            RespValue::array(r.into_iter().map(|v| match v {
-                Some(b) => RespValue::bulk(b),
-                None => RespValue::null_bulk(),
-            }).collect())
+            RespValue::array(
+                r.into_iter()
+                    .map(|v| match v {
+                        Some(b) => RespValue::bulk(b),
+                        None => RespValue::null_bulk(),
+                    })
+                    .collect(),
+            )
         }
         "HMSET" => {
             if args.len() < 3 || (args.len() - 1) % 2 != 0 {
-                return RespValue::Error("ERR wrong number of arguments for 'hmset' command".into());
+                return RespValue::Error(
+                    "ERR wrong number of arguments for 'hmset' command".into(),
+                );
             }
             let key = args[0].clone();
             let mut pairs = Vec::new();
@@ -470,7 +500,9 @@ pub fn handle(cmd: &[Bytes]) -> RespValue {
         }
         "HGETALL" => {
             if args.len() < 1 {
-                return RespValue::Error("ERR wrong number of arguments for 'hgetall' command".into());
+                return RespValue::Error(
+                    "ERR wrong number of arguments for 'hgetall' command".into(),
+                );
             }
             let r = HGetAll::new(args[0].clone()).execute(store);
             RespValue::array(r.into_iter().map(|b| RespValue::bulk(b)).collect())
@@ -484,7 +516,9 @@ pub fn handle(cmd: &[Bytes]) -> RespValue {
         }
         "HEXISTS" => {
             if args.len() < 2 {
-                return RespValue::Error("ERR wrong number of arguments for 'hexists' command".into());
+                return RespValue::Error(
+                    "ERR wrong number of arguments for 'hexists' command".into(),
+                );
             }
             RespValue::int(HExists::new(args[0].clone(), args[1].clone()).execute(store) as i64)
         }
@@ -496,28 +530,40 @@ pub fn handle(cmd: &[Bytes]) -> RespValue {
         }
         "HKEYS" => {
             if args.len() < 1 {
-                return RespValue::Error("ERR wrong number of arguments for 'hkeys' command".into());
+                return RespValue::Error(
+                    "ERR wrong number of arguments for 'hkeys' command".into(),
+                );
             }
             let r = HKeys::new(args[0].clone()).execute(store);
             RespValue::array(r.into_iter().map(|b| RespValue::bulk(b)).collect())
         }
         "HVALS" => {
             if args.len() < 1 {
-                return RespValue::Error("ERR wrong number of arguments for 'hvals' command".into());
+                return RespValue::Error(
+                    "ERR wrong number of arguments for 'hvals' command".into(),
+                );
             }
             let r = HVals::new(args[0].clone()).execute(store);
             RespValue::array(r.into_iter().map(|b| RespValue::bulk(b)).collect())
         }
         "HINCRBY" => {
             if args.len() < 3 {
-                return RespValue::Error("ERR wrong number of arguments for 'hincrby' command".into());
+                return RespValue::Error(
+                    "ERR wrong number of arguments for 'hincrby' command".into(),
+                );
             }
             let increment = match std::str::from_utf8(&args[2]) {
                 Ok(s) => match s.parse::<i64>() {
                     Ok(n) => n,
-                    Err(_) => return RespValue::Error("ERR value is not an integer or out of range".into()),
+                    Err(_) => {
+                        return RespValue::Error(
+                            "ERR value is not an integer or out of range".into(),
+                        )
+                    }
                 },
-                Err(_) => return RespValue::Error("ERR value is not an integer or out of range".into()),
+                Err(_) => {
+                    return RespValue::Error("ERR value is not an integer or out of range".into())
+                }
             };
             match HIncrBy::new(args[0].clone(), args[1].clone(), increment).execute(store) {
                 Ok(v) => RespValue::int(v),
@@ -526,14 +572,24 @@ pub fn handle(cmd: &[Bytes]) -> RespValue {
         }
         "HINCRBYFLOAT" => {
             if args.len() < 3 {
-                return RespValue::Error("ERR wrong number of arguments for 'hincrbyfloat' command".into());
+                return RespValue::Error(
+                    "ERR wrong number of arguments for 'hincrbyfloat' command".into(),
+                );
             }
             let increment = match std::str::from_utf8(&args[2]) {
                 Ok(s) => match s.parse::<f64>() {
                     Ok(n) => n,
-                    Err(_) => return RespValue::Error("ERR value is not a valid float or out of range".into()),
+                    Err(_) => {
+                        return RespValue::Error(
+                            "ERR value is not a valid float or out of range".into(),
+                        )
+                    }
                 },
-                Err(_) => return RespValue::Error("ERR value is not a valid float or out of range".into()),
+                Err(_) => {
+                    return RespValue::Error(
+                        "ERR value is not a valid float or out of range".into(),
+                    )
+                }
             };
             match HIncrByFloat::new(args[0].clone(), args[1].clone(), increment).execute(store) {
                 Ok(v) => RespValue::bulk(v),
@@ -542,7 +598,9 @@ pub fn handle(cmd: &[Bytes]) -> RespValue {
         }
         "HSCAN" => {
             if args.len() < 1 {
-                return RespValue::Error("ERR wrong number of arguments for 'hscan' command".into());
+                return RespValue::Error(
+                    "ERR wrong number of arguments for 'hscan' command".into(),
+                );
             }
             // Parse: HSCAN key [cursor] [MATCH pattern] [COUNT count]
             let key = args[0].clone();
@@ -567,9 +625,17 @@ pub fn handle(cmd: &[Bytes]) -> RespValue {
                             count = match std::str::from_utf8(&args[i + 1]) {
                                 Ok(c) => match c.parse::<usize>() {
                                     Ok(n) => n,
-                                    Err(_) => return RespValue::Error("ERR value is not an integer or out of range".into()),
+                                    Err(_) => {
+                                        return RespValue::Error(
+                                            "ERR value is not an integer or out of range".into(),
+                                        )
+                                    }
                                 },
-                                Err(_) => return RespValue::Error("ERR value is not an integer or out of range".into()),
+                                Err(_) => {
+                                    return RespValue::Error(
+                                        "ERR value is not an integer or out of range".into(),
+                                    )
+                                }
                             };
                             i += 2;
                         }
@@ -596,7 +662,9 @@ pub fn handle(cmd: &[Bytes]) -> RespValue {
         }
         "HRANDFIELD" => {
             if args.len() < 1 {
-                return RespValue::Error("ERR wrong number of arguments for 'hrandfield' command".into());
+                return RespValue::Error(
+                    "ERR wrong number of arguments for 'hrandfield' command".into(),
+                );
             }
             let key = args[0].clone();
             let mut count = 1i64;
@@ -612,9 +680,17 @@ pub fn handle(cmd: &[Bytes]) -> RespValue {
                             count = match std::str::from_utf8(&args[i + 1]) {
                                 Ok(c) => match c.parse::<i64>() {
                                     Ok(n) => n,
-                                    Err(_) => return RespValue::Error("ERR value is not an integer or out of range".into()),
+                                    Err(_) => {
+                                        return RespValue::Error(
+                                            "ERR value is not an integer or out of range".into(),
+                                        )
+                                    }
                                 },
-                                Err(_) => return RespValue::Error("ERR value is not an integer or out of range".into()),
+                                Err(_) => {
+                                    return RespValue::Error(
+                                        "ERR value is not an integer or out of range".into(),
+                                    )
+                                }
                             };
                             i += 2;
                         }
@@ -626,9 +702,17 @@ pub fn handle(cmd: &[Bytes]) -> RespValue {
                             count = match std::str::from_utf8(&args[i]) {
                                 Ok(c) => match c.parse::<i64>() {
                                     Ok(n) => n,
-                                    Err(_) => return RespValue::Error("ERR value is not an integer or out of range".into()),
+                                    Err(_) => {
+                                        return RespValue::Error(
+                                            "ERR value is not an integer or out of range".into(),
+                                        )
+                                    }
                                 },
-                                Err(_) => return RespValue::Error("ERR value is not an integer or out of range".into()),
+                                Err(_) => {
+                                    return RespValue::Error(
+                                        "ERR value is not an integer or out of range".into(),
+                                    )
+                                }
                             };
                             i += 1;
                         }
@@ -651,13 +735,20 @@ pub fn handle(cmd: &[Bytes]) -> RespValue {
 mod tests {
     use super::*;
 
-    fn st() -> HashStore { new_hash_store() }
-    fn b(s: &str) -> Bytes { Bytes::from(s.to_string()) }
+    fn st() -> HashStore {
+        new_hash_store()
+    }
+    fn b(s: &str) -> Bytes {
+        Bytes::from(s.to_string())
+    }
 
     #[test]
     fn hset_new_fields() {
         let s = st();
-        assert_eq!(HSet::new(b("k"), vec![(b("f1"), b("v1")), (b("f2"), b("v2"))]).execute(&s), 2);
+        assert_eq!(
+            HSet::new(b("k"), vec![(b("f1"), b("v1")), (b("f2"), b("v2"))]).execute(&s),
+            2
+        );
     }
 
     #[test]
@@ -671,7 +762,10 @@ mod tests {
     fn hset_mixed() {
         let s = st();
         HSet::new(b("k"), vec![(b("f1"), b("v1"))]).execute(&s);
-        assert_eq!(HSet::new(b("k"), vec![(b("f1"), b("x")), (b("f2"), b("v2"))]).execute(&s), 1);
+        assert_eq!(
+            HSet::new(b("k"), vec![(b("f1"), b("x")), (b("f2"), b("v2"))]).execute(&s),
+            1
+        );
     }
 
     #[test]
@@ -707,7 +801,10 @@ mod tests {
     #[test]
     fn hmset_ok() {
         let s = st();
-        assert_eq!(HMSet::new(b("k"), vec![(b("f1"), b("v1"))]).execute(&s), "OK");
+        assert_eq!(
+            HMSet::new(b("k"), vec![(b("f1"), b("v1"))]).execute(&s),
+            "OK"
+        );
         assert_eq!(HGet::new(b("k"), b("f1")).execute(&s), Some(b("v1")));
     }
 
@@ -728,7 +825,11 @@ mod tests {
     #[test]
     fn hdel_existing() {
         let s = st();
-        HSet::new(b("k"), vec![(b("a"), b("1")), (b("b"), b("2")), (b("c"), b("3"))]).execute(&s);
+        HSet::new(
+            b("k"),
+            vec![(b("a"), b("1")), (b("b"), b("2")), (b("c"), b("3"))],
+        )
+        .execute(&s);
         assert_eq!(HDel::new(b("k"), vec![b("a"), b("c")]).execute(&s), 2);
         assert_eq!(HGet::new(b("k"), b("a")).execute(&s), None);
         assert_eq!(HGet::new(b("k"), b("b")).execute(&s), Some(b("2")));
@@ -840,13 +941,24 @@ mod tests {
     #[test]
     fn hscan_full() {
         let s = st();
-        HSet::new(b("k"), vec![(b("a"), b("1")), (b("b"), b("2")), (b("c"), b("3")), (b("d"), b("4"))]).execute(&s);
+        HSet::new(
+            b("k"),
+            vec![
+                (b("a"), b("1")),
+                (b("b"), b("2")),
+                (b("c"), b("3")),
+                (b("d"), b("4")),
+            ],
+        )
+        .execute(&s);
         let mut all = Vec::new();
         let mut cur = 0;
         loop {
             let (next, pairs) = HScan::new(b("k"), cur, None, 2).execute(&s);
             all.extend(pairs);
-            if next == 0 { break; }
+            if next == 0 {
+                break;
+            }
             cur = next;
         }
         assert_eq!(all.len(), 8);
@@ -863,7 +975,11 @@ mod tests {
     #[test]
     fn hscan_count() {
         let s = st();
-        HSet::new(b("k"), vec![(b("a"), b("1")), (b("b"), b("2")), (b("c"), b("3"))]).execute(&s);
+        HSet::new(
+            b("k"),
+            vec![(b("a"), b("1")), (b("b"), b("2")), (b("c"), b("3"))],
+        )
+        .execute(&s);
         let (next, pairs) = HScan::new(b("k"), 0, None, 1).execute(&s);
         assert_eq!(pairs.len(), 2);
         assert!(next > 0);
@@ -872,7 +988,11 @@ mod tests {
     #[test]
     fn hrandfield_positive() {
         let s = st();
-        HSet::new(b("k"), vec![(b("a"), b("1")), (b("b"), b("2")), (b("c"), b("3"))]).execute(&s);
+        HSet::new(
+            b("k"),
+            vec![(b("a"), b("1")), (b("b"), b("2")), (b("c"), b("3"))],
+        )
+        .execute(&s);
         let r = HRandField::new(b("k"), 2, false).execute(&s);
         assert_eq!(r.len(), 2);
         for f in &r {

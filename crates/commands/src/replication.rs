@@ -52,9 +52,7 @@ pub async fn handle_replconf(args: &[Bytes]) -> RespValue {
             }
             RespValue::ok()
         }
-        "CAPA" => {
-            RespValue::ok()
-        }
+        "CAPA" => RespValue::ok(),
         "ACK" => {
             if args.len() < 2 {
                 return RespValue::Error("ERR wrong number of arguments".into());
@@ -165,4 +163,3 @@ pub async fn cmd_wait(args: &[Bytes]) -> RespValue {
 pub async fn cmd_psync(_args: &[Bytes], _store: &Arc<Store>) -> RespValue {
     RespValue::Error("ERR PSYNC is a replication internal command".into())
 }
-

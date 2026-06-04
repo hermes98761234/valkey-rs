@@ -75,7 +75,8 @@ impl PubSubHub {
 
     /// Get the number of active pattern subscriptions.
     pub fn numpat(&self) -> usize {
-        self.pattern_sub_count.load(std::sync::atomic::Ordering::SeqCst)
+        self.pattern_sub_count
+            .load(std::sync::atomic::Ordering::SeqCst)
     }
 
     /// List active channels (those with at least one subscriber), optionally filtered by pattern.
@@ -237,7 +238,10 @@ mod tests {
     #[test]
     fn test_glob_combined() {
         assert!(PubSubHub::matches_pattern(b"chan*_[0-9]", b"chan_foo_1"));
-        assert!(PubSubHub::matches_pattern(b"*test*", b"this_is_a_test_channel"));
+        assert!(PubSubHub::matches_pattern(
+            b"*test*",
+            b"this_is_a_test_channel"
+        ));
     }
 
     #[test]

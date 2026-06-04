@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::{broadcast, Mutex};
-use tracing::{info};
+use tracing::info;
 
 use valkey_persistence::rdb;
 use valkey_storage::Store;
@@ -233,7 +233,10 @@ impl ReplicationManager {
 
         if can_partial {
             let offset = offset.unwrap();
-            info!("Partial resync for replica {} from offset {}", replica_id, offset);
+            info!(
+                "Partial resync for replica {} from offset {}",
+                replica_id, offset
+            );
 
             // Send +CONTINUE
             let resp = format!("+CONTINUE {}\r\n", self.repl_id);
@@ -281,7 +284,10 @@ impl ReplicationManager {
 
         stream.flush().await?;
 
-        replica.offset.store(self.backlog_offset.load(Ordering::Relaxed), Ordering::Relaxed);
+        replica.offset.store(
+            self.backlog_offset.load(Ordering::Relaxed),
+            Ordering::Relaxed,
+        );
 
         Ok(replica_id)
     }
@@ -302,7 +308,8 @@ impl ReplicationManager {
 
     /// Remove disconnected replicas from the map.
     fn reap_disconnected_replicas(&self) {
-        self.replicas.retain(|_, replica| replica.active.load(Ordering::Relaxed));
+        self.replicas
+            .retain(|_, replica| replica.active.load(Ordering::Relaxed));
     }
 
     /// Mark a replica as disconnected.
@@ -335,13 +342,17 @@ impl ReplicationManager {
 
 /// Generate a 40-character random hex string for use as repl_id.
 fn generate_repl_id() -> String {
-    use std::hash::{Hash, Hasher};
     use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
     let mut s = String::with_capacity(40);
     for i in 0..5 {
         let mut hasher = DefaultHasher::new();
         std::process::id().hash(&mut hasher);
-        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos().hash(&mut hasher);
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+            .hash(&mut hasher);
         i.hash(&mut hasher);
         let seed = hasher.finish();
         for j in 0..8 {
@@ -408,6 +419,9 @@ mod tests {
             Bytes::from("myvalue"),
         ];
         let encoded = encode_repl_command(&cmd);
-        assert_eq!(&encoded[..], b"*3\r\n$3\r\nSET\r\n$5\r\nmykey\r\n$7\r\nmyvalue\r\n");
+        assert_eq!(
+            &encoded[..],
+            b"*3\r\n$3\r\nSET\r\n$5\r\nmykey\r\n$7\r\nmyvalue\r\n"
+        );
     }
 }

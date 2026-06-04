@@ -1,4 +1,4 @@
-use crate::state::{ClusterState, NodeInfo, NodeFlags};
+use crate::state::{ClusterState, NodeFlags, NodeInfo};
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::debug;

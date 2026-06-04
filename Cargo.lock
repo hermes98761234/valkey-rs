@@ -981,6 +981,15 @@ checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
 [[package]]
 name = "valkey-cluster"
 version = "0.1.0"
+dependencies = [
+ "bytes",
+ "crc",
+ "dashmap",
+ "tokio",
+ "tracing",
+ "valkey-proto",
+ "valkey-storage",
+]
 
 [[package]]
 name = "valkey-commands"
@@ -996,6 +1005,7 @@ dependencies = [
  "valkey-persistence",
  "valkey-proto",
  "valkey-pubsub",
+ "valkey-replication",
  "valkey-scripting",
  "valkey-storage",
 ]
@@ -1037,6 +1047,16 @@ dependencies = [
 [[package]]
 name = "valkey-replication"
 version = "0.1.0"
+dependencies = [
+ "bytes",
+ "dashmap",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "valkey-persistence",
+ "valkey-proto",
+ "valkey-storage",
+]
 
 [[package]]
 name = "valkey-scripting"
@@ -1070,6 +1090,7 @@ dependencies = [
  "valkey-commands",
  "valkey-persistence",
  "valkey-proto",
+ "valkey-replication",
  "valkey-storage",
 ]
 

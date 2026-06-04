@@ -74,23 +74,540 @@ fn build_categories() -> HashMap<String, HashSet<String>> {
         };
     }
 
-    add!("string", ["GET","SET","DEL","GETSET","MGET","MSET","MSETNX","INCR","DECR","INCRBY","DECRBY","INCRBYFLOAT","APPEND","STRLEN","GETRANGE","SETRANGE","SETNX","SETEX","PSETEX","GETEX","GETDEL"]);
-    add!("list", ["LPUSH","RPUSH","LPOP","RPOP","LRANGE","LLEN","LINDEX","LSET","LINSERT","LREM","LTRIM","LMOVE","BLPOP","BRPOP"]);
-    add!("hash", ["HSET","HGET","HMGET","HMSET","HGETALL","HDEL","HEXISTS","HLEN","HKEYS","HVALS","HINCRBY","HINCRBYFLOAT","HSCAN","HRANDFIELD"]);
-    add!("set", ["SADD","SMEMBERS","SISMEMBER","SMISMEMBER","SCARD","SREM","SPOP","SRANDMEMBER","SMOVE","SUNION","SINTER","SDIFF","SUNIONSTORE","SINTERSTORE","SDIFFSTORE","SSCAN"]);
-    add!("sortedset", ["ZADD","ZSCORE","ZMSCORE","ZRANK","ZREVRANK","ZRANGE","ZREVRANGE","ZRANGEBYSCORE","ZREVRANGEBYSCORE","ZRANGEBYLEX","ZCOUNT","ZLEXCOUNT","ZREM","ZREMRANGEBYRANK","ZREMRANGEBYSCORE","ZREMRANGEBYLEX","ZCARD","ZINCRBY","ZPOPMIN","ZPOPMAX","ZUNIONSTORE","ZINTERSTORE","ZDIFFSTORE","ZSCAN","ZRANDMEMBER","ZRANGESTORE"]);
-    add!("pubsub", ["SUBSCRIBE","UNSUBSCRIBE","PSUBSCRIBE","PUNSUBSCRIBE","PUBLISH","PUBSUB","SSUBSCRIBE","SUNSUBSCRIBE"]);
-    add!("transactions", ["MULTI","EXEC","DISCARD","WATCH","UNWATCH"]);
-    add!("scripting", ["EVAL","EVALSHA","SCRIPT"]);
-    add!("server", ["PING","ECHO","SELECT","DBSIZE","FLUSHDB","FLUSHALL","INFO","COMMAND","CONFIG","SAVE","BGSAVE","BGREWRITEAOF","LASTSAVE","TIME","LATENCY","SLOWLOG","MEMORY","CLIENT","DEBUG","OBJECT","RESET","SHUTDOWN"]);
-    add!("connection", ["AUTH","QUIT","CLIENT","SELECT"]);
-    add!("stream", ["XADD","XREAD","XRANGE","XREVRANGE","XLEN","XTRIM","XDEL","XINFO","XGROUP","XREADGROUP","XACK","XCLAIM","XPENDING","XAUTOCLAIM"]);
-    add!("dangerous", ["FLUSHALL","FLUSHDB","SHUTDOWN","DEBUG","CONFIG","SCRIPT","CLUSTER","REPLICAOF","SLAVEOF","KEYS","SCAN"]);
-    add!("keyspace", ["DEL","EXISTS","TYPE","RENAME","RENAMENX","EXPIRE","PEXPIRE","EXPIREAT","PEXPIREAT","TTL","PTTL","PERSIST","KEYS","SCAN","RANDOMKEY","MOVE","COPY","DUMP","RESTORE","WAIT","SORT","UNLINK"]);
-    add!("read", ["GET","MGET","GETSET","STRLEN","GETRANGE","LINDEX","LLEN","LRANGE","HGET","HMGET","HGETALL","HEXISTS","HLEN","HKEYS","HVALS","HSCAN","HRANDFIELD","SISMEMBER","SMEMBERS","SMISMEMBER","SCARD","SRANDMEMBER","SUNION","SINTER","SDIFF","SSCAN","ZRANK","ZREVRANK","ZSCORE","ZMSCORE","ZRANGE","ZREVRANGE","ZRANGEBYSCORE","ZREVRANGEBYSCORE","ZRANGEBYLEX","ZCOUNT","ZLEXCOUNT","ZCARD","ZRANDMEMBER","ZSCAN","XLEN","XRANGE","XREVRANGE","XINFO","XPENDING","DUMP","TYPE","EXISTS","TTL","PTTL","OBJECT","RANDOMKEY","KEYS","SCAN","PUBSUB"]);
-    add!("write", ["SET","DEL","GETSET","MSET","MSETNX","INCR","DECR","INCRBY","DECRBY","INCRBYFLOAT","APPEND","SETRANGE","SETNX","SETEX","PSETEX","GETEX","GETDEL","LPUSH","RPUSH","LPOP","RPOP","LSET","LINSERT","LREM","LTRIM","LMOVE","BLPOP","BRPOP","HSET","HMSET","HDEL","HINCRBY","HINCRBYFLOAT","SADD","SREM","SPOP","SMOVE","SUNIONSTORE","SINTERSTORE","SDIFFSTORE","ZADD","ZREM","ZINCRBY","ZPOPMIN","ZPOPMAX","ZUNIONSTORE","ZINTERSTORE","ZDIFFSTORE","ZREMRANGEBYRANK","ZREMRANGEBYSCORE","ZREMRANGEBYLEX","ZRANGESTORE","XADD","XDEL","XTRIM","XGROUP","XACK","XCLAIM","XAUTOCLAIM","RENAME","RENAMENX","EXPIRE","PEXPIRE","EXPIREAT","PEXPIREAT","PERSIST","MOVE","COPY","RESTORE","FLUSHDB","FLUSHALL","PUBLISH","SUBSCRIBE","UNSUBSCRIBE","PSUBSCRIBE","PUNSUBSCRIBE","SSUBSCRIBE","SUNSUBSCRIBE","MULTI","EXEC","DISCARD","WATCH","UNWATCH"]);
-    add!("fast", ["PING","ECHO","SET","GET","DEL","EXISTS","TYPE","RENAME","RENAMENX","INCR","DECR","INCRBY","DECRBY","APPEND","STRLEN","GETRANGE","SETRANGE","SETNX","LPUSH","RPUSH","LPOP","RPOP","LLEN","LINDEX","LSET","LINSERT","LREM","LTRIM","HSET","HGET","HDEL","HEXISTS","HLEN","HKEYS","HVALS","HINCRBY","SADD","SISMEMBER","SREM","SCARD","SPOP","SMEMBERS","ZADD","ZSCORE","ZRANK","ZREVRANK","ZRANGE","ZREVRANGE","ZCOUNT","ZCARD","ZREM","ZINCRBY","SELECT","DBSIZE","FLUSHDB","FLUSHALL","SAVE","BGSAVE","LASTSAVE","TIME","QUIT","AUTH","INFO","COMMAND","CONFIG","OBJECT","RESET"]);
-    add!("slow", ["KEYS","SCAN","SORT","BLPOP","BRPOP","SUNION","SINTER","SDIFF","SUNIONSTORE","SINTERSTORE","SDIFFSTORE","ZUNIONSTORE","ZINTERSTORE","ZDIFFSTORE","ZRANGEBYSCORE","ZREVRANGEBYSCORE","ZRANGEBYLEX","ZLEXCOUNT","ZREMRANGEBYRANK","ZREMRANGEBYSCORE","ZREMRANGEBYLEX","ZSCAN","ZRANDMEMBER","ZRANGESTORE","HSCAN","HRANDFIELD","SSCAN","XREAD","XREADGROUP","XADD","XTRIM","XDEL","XINFO","XGROUP","XACK","XCLAIM","XPENDING","XAUTOCLAIM","PUBSUB","PUBLISH","SUBSCRIBE","UNSUBSCRIBE","PSUBSCRIBE","PUNSUBSCRIBE","SSUBSCRIBE","SUNSUBSCRIBE","MULTI","EXEC","DISCARD","WATCH","UNWATCH","FLUSHALL","SHUTDOWN","DEBUG","SCRIPT","EVAL","EVALSHA","CLUSTER","REPLICAOF","SLAVEOF","MIGRATE","WAIT","DUMP","RESTORE","COPY","MOVE","RANDOMKEY","GETSET","MGET","MSET","MSETNX","INCRBYFLOAT","HINCRBYFLOAT","HGETALL","HMGET","HMSET","HVALS","ZMSCORE","ZRANGEBYLEX","ZREVRANGEBYLEX","ZPOPMIN","ZPOPMAX","GETEX","GETDEL","PSETEX","PEXPIRE","PEXPIREAT","EXPIREAT","PERSIST","TTL","PTTL","EXPIRE","CLIENT","LATENCY","SLOWLOG","MEMORY","BGREWRITEAOF"]);
+    add!(
+        "string",
+        [
+            "GET",
+            "SET",
+            "DEL",
+            "GETSET",
+            "MGET",
+            "MSET",
+            "MSETNX",
+            "INCR",
+            "DECR",
+            "INCRBY",
+            "DECRBY",
+            "INCRBYFLOAT",
+            "APPEND",
+            "STRLEN",
+            "GETRANGE",
+            "SETRANGE",
+            "SETNX",
+            "SETEX",
+            "PSETEX",
+            "GETEX",
+            "GETDEL"
+        ]
+    );
+    add!(
+        "list",
+        [
+            "LPUSH", "RPUSH", "LPOP", "RPOP", "LRANGE", "LLEN", "LINDEX", "LSET", "LINSERT",
+            "LREM", "LTRIM", "LMOVE", "BLPOP", "BRPOP"
+        ]
+    );
+    add!(
+        "hash",
+        [
+            "HSET",
+            "HGET",
+            "HMGET",
+            "HMSET",
+            "HGETALL",
+            "HDEL",
+            "HEXISTS",
+            "HLEN",
+            "HKEYS",
+            "HVALS",
+            "HINCRBY",
+            "HINCRBYFLOAT",
+            "HSCAN",
+            "HRANDFIELD"
+        ]
+    );
+    add!(
+        "set",
+        [
+            "SADD",
+            "SMEMBERS",
+            "SISMEMBER",
+            "SMISMEMBER",
+            "SCARD",
+            "SREM",
+            "SPOP",
+            "SRANDMEMBER",
+            "SMOVE",
+            "SUNION",
+            "SINTER",
+            "SDIFF",
+            "SUNIONSTORE",
+            "SINTERSTORE",
+            "SDIFFSTORE",
+            "SSCAN"
+        ]
+    );
+    add!(
+        "sortedset",
+        [
+            "ZADD",
+            "ZSCORE",
+            "ZMSCORE",
+            "ZRANK",
+            "ZREVRANK",
+            "ZRANGE",
+            "ZREVRANGE",
+            "ZRANGEBYSCORE",
+            "ZREVRANGEBYSCORE",
+            "ZRANGEBYLEX",
+            "ZCOUNT",
+            "ZLEXCOUNT",
+            "ZREM",
+            "ZREMRANGEBYRANK",
+            "ZREMRANGEBYSCORE",
+            "ZREMRANGEBYLEX",
+            "ZCARD",
+            "ZINCRBY",
+            "ZPOPMIN",
+            "ZPOPMAX",
+            "ZUNIONSTORE",
+            "ZINTERSTORE",
+            "ZDIFFSTORE",
+            "ZSCAN",
+            "ZRANDMEMBER",
+            "ZRANGESTORE"
+        ]
+    );
+    add!(
+        "pubsub",
+        [
+            "SUBSCRIBE",
+            "UNSUBSCRIBE",
+            "PSUBSCRIBE",
+            "PUNSUBSCRIBE",
+            "PUBLISH",
+            "PUBSUB",
+            "SSUBSCRIBE",
+            "SUNSUBSCRIBE"
+        ]
+    );
+    add!(
+        "transactions",
+        ["MULTI", "EXEC", "DISCARD", "WATCH", "UNWATCH"]
+    );
+    add!("scripting", ["EVAL", "EVALSHA", "SCRIPT"]);
+    add!(
+        "server",
+        [
+            "PING",
+            "ECHO",
+            "SELECT",
+            "DBSIZE",
+            "FLUSHDB",
+            "FLUSHALL",
+            "INFO",
+            "COMMAND",
+            "CONFIG",
+            "SAVE",
+            "BGSAVE",
+            "BGREWRITEAOF",
+            "LASTSAVE",
+            "TIME",
+            "LATENCY",
+            "SLOWLOG",
+            "MEMORY",
+            "CLIENT",
+            "DEBUG",
+            "OBJECT",
+            "RESET",
+            "SHUTDOWN"
+        ]
+    );
+    add!("connection", ["AUTH", "QUIT", "CLIENT", "SELECT"]);
+    add!(
+        "stream",
+        [
+            "XADD",
+            "XREAD",
+            "XRANGE",
+            "XREVRANGE",
+            "XLEN",
+            "XTRIM",
+            "XDEL",
+            "XINFO",
+            "XGROUP",
+            "XREADGROUP",
+            "XACK",
+            "XCLAIM",
+            "XPENDING",
+            "XAUTOCLAIM"
+        ]
+    );
+    add!(
+        "dangerous",
+        [
+            "FLUSHALL",
+            "FLUSHDB",
+            "SHUTDOWN",
+            "DEBUG",
+            "CONFIG",
+            "SCRIPT",
+            "CLUSTER",
+            "REPLICAOF",
+            "SLAVEOF",
+            "KEYS",
+            "SCAN"
+        ]
+    );
+    add!(
+        "keyspace",
+        [
+            "DEL",
+            "EXISTS",
+            "TYPE",
+            "RENAME",
+            "RENAMENX",
+            "EXPIRE",
+            "PEXPIRE",
+            "EXPIREAT",
+            "PEXPIREAT",
+            "TTL",
+            "PTTL",
+            "PERSIST",
+            "KEYS",
+            "SCAN",
+            "RANDOMKEY",
+            "MOVE",
+            "COPY",
+            "DUMP",
+            "RESTORE",
+            "WAIT",
+            "SORT",
+            "UNLINK"
+        ]
+    );
+    add!(
+        "read",
+        [
+            "GET",
+            "MGET",
+            "GETSET",
+            "STRLEN",
+            "GETRANGE",
+            "LINDEX",
+            "LLEN",
+            "LRANGE",
+            "HGET",
+            "HMGET",
+            "HGETALL",
+            "HEXISTS",
+            "HLEN",
+            "HKEYS",
+            "HVALS",
+            "HSCAN",
+            "HRANDFIELD",
+            "SISMEMBER",
+            "SMEMBERS",
+            "SMISMEMBER",
+            "SCARD",
+            "SRANDMEMBER",
+            "SUNION",
+            "SINTER",
+            "SDIFF",
+            "SSCAN",
+            "ZRANK",
+            "ZREVRANK",
+            "ZSCORE",
+            "ZMSCORE",
+            "ZRANGE",
+            "ZREVRANGE",
+            "ZRANGEBYSCORE",
+            "ZREVRANGEBYSCORE",
+            "ZRANGEBYLEX",
+            "ZCOUNT",
+            "ZLEXCOUNT",
+            "ZCARD",
+            "ZRANDMEMBER",
+            "ZSCAN",
+            "XLEN",
+            "XRANGE",
+            "XREVRANGE",
+            "XINFO",
+            "XPENDING",
+            "DUMP",
+            "TYPE",
+            "EXISTS",
+            "TTL",
+            "PTTL",
+            "OBJECT",
+            "RANDOMKEY",
+            "KEYS",
+            "SCAN",
+            "PUBSUB"
+        ]
+    );
+    add!(
+        "write",
+        [
+            "SET",
+            "DEL",
+            "GETSET",
+            "MSET",
+            "MSETNX",
+            "INCR",
+            "DECR",
+            "INCRBY",
+            "DECRBY",
+            "INCRBYFLOAT",
+            "APPEND",
+            "SETRANGE",
+            "SETNX",
+            "SETEX",
+            "PSETEX",
+            "GETEX",
+            "GETDEL",
+            "LPUSH",
+            "RPUSH",
+            "LPOP",
+            "RPOP",
+            "LSET",
+            "LINSERT",
+            "LREM",
+            "LTRIM",
+            "LMOVE",
+            "BLPOP",
+            "BRPOP",
+            "HSET",
+            "HMSET",
+            "HDEL",
+            "HINCRBY",
+            "HINCRBYFLOAT",
+            "SADD",
+            "SREM",
+            "SPOP",
+            "SMOVE",
+            "SUNIONSTORE",
+            "SINTERSTORE",
+            "SDIFFSTORE",
+            "ZADD",
+            "ZREM",
+            "ZINCRBY",
+            "ZPOPMIN",
+            "ZPOPMAX",
+            "ZUNIONSTORE",
+            "ZINTERSTORE",
+            "ZDIFFSTORE",
+            "ZREMRANGEBYRANK",
+            "ZREMRANGEBYSCORE",
+            "ZREMRANGEBYLEX",
+            "ZRANGESTORE",
+            "XADD",
+            "XDEL",
+            "XTRIM",
+            "XGROUP",
+            "XACK",
+            "XCLAIM",
+            "XAUTOCLAIM",
+            "RENAME",
+            "RENAMENX",
+            "EXPIRE",
+            "PEXPIRE",
+            "EXPIREAT",
+            "PEXPIREAT",
+            "PERSIST",
+            "MOVE",
+            "COPY",
+            "RESTORE",
+            "FLUSHDB",
+            "FLUSHALL",
+            "PUBLISH",
+            "SUBSCRIBE",
+            "UNSUBSCRIBE",
+            "PSUBSCRIBE",
+            "PUNSUBSCRIBE",
+            "SSUBSCRIBE",
+            "SUNSUBSCRIBE",
+            "MULTI",
+            "EXEC",
+            "DISCARD",
+            "WATCH",
+            "UNWATCH"
+        ]
+    );
+    add!(
+        "fast",
+        [
+            "PING",
+            "ECHO",
+            "SET",
+            "GET",
+            "DEL",
+            "EXISTS",
+            "TYPE",
+            "RENAME",
+            "RENAMENX",
+            "INCR",
+            "DECR",
+            "INCRBY",
+            "DECRBY",
+            "APPEND",
+            "STRLEN",
+            "GETRANGE",
+            "SETRANGE",
+            "SETNX",
+            "LPUSH",
+            "RPUSH",
+            "LPOP",
+            "RPOP",
+            "LLEN",
+            "LINDEX",
+            "LSET",
+            "LINSERT",
+            "LREM",
+            "LTRIM",
+            "HSET",
+            "HGET",
+            "HDEL",
+            "HEXISTS",
+            "HLEN",
+            "HKEYS",
+            "HVALS",
+            "HINCRBY",
+            "SADD",
+            "SISMEMBER",
+            "SREM",
+            "SCARD",
+            "SPOP",
+            "SMEMBERS",
+            "ZADD",
+            "ZSCORE",
+            "ZRANK",
+            "ZREVRANK",
+            "ZRANGE",
+            "ZREVRANGE",
+            "ZCOUNT",
+            "ZCARD",
+            "ZREM",
+            "ZINCRBY",
+            "SELECT",
+            "DBSIZE",
+            "FLUSHDB",
+            "FLUSHALL",
+            "SAVE",
+            "BGSAVE",
+            "LASTSAVE",
+            "TIME",
+            "QUIT",
+            "AUTH",
+            "INFO",
+            "COMMAND",
+            "CONFIG",
+            "OBJECT",
+            "RESET"
+        ]
+    );
+    add!(
+        "slow",
+        [
+            "KEYS",
+            "SCAN",
+            "SORT",
+            "BLPOP",
+            "BRPOP",
+            "SUNION",
+            "SINTER",
+            "SDIFF",
+            "SUNIONSTORE",
+            "SINTERSTORE",
+            "SDIFFSTORE",
+            "ZUNIONSTORE",
+            "ZINTERSTORE",
+            "ZDIFFSTORE",
+            "ZRANGEBYSCORE",
+            "ZREVRANGEBYSCORE",
+            "ZRANGEBYLEX",
+            "ZLEXCOUNT",
+            "ZREMRANGEBYRANK",
+            "ZREMRANGEBYSCORE",
+            "ZREMRANGEBYLEX",
+            "ZSCAN",
+            "ZRANDMEMBER",
+            "ZRANGESTORE",
+            "HSCAN",
+            "HRANDFIELD",
+            "SSCAN",
+            "XREAD",
+            "XREADGROUP",
+            "XADD",
+            "XTRIM",
+            "XDEL",
+            "XINFO",
+            "XGROUP",
+            "XACK",
+            "XCLAIM",
+            "XPENDING",
+            "XAUTOCLAIM",
+            "PUBSUB",
+            "PUBLISH",
+            "SUBSCRIBE",
+            "UNSUBSCRIBE",
+            "PSUBSCRIBE",
+            "PUNSUBSCRIBE",
+            "SSUBSCRIBE",
+            "SUNSUBSCRIBE",
+            "MULTI",
+            "EXEC",
+            "DISCARD",
+            "WATCH",
+            "UNWATCH",
+            "FLUSHALL",
+            "SHUTDOWN",
+            "DEBUG",
+            "SCRIPT",
+            "EVAL",
+            "EVALSHA",
+            "CLUSTER",
+            "REPLICAOF",
+            "SLAVEOF",
+            "MIGRATE",
+            "WAIT",
+            "DUMP",
+            "RESTORE",
+            "COPY",
+            "MOVE",
+            "RANDOMKEY",
+            "GETSET",
+            "MGET",
+            "MSET",
+            "MSETNX",
+            "INCRBYFLOAT",
+            "HINCRBYFLOAT",
+            "HGETALL",
+            "HMGET",
+            "HMSET",
+            "HVALS",
+            "ZMSCORE",
+            "ZRANGEBYLEX",
+            "ZREVRANGEBYLEX",
+            "ZPOPMIN",
+            "ZPOPMAX",
+            "GETEX",
+            "GETDEL",
+            "PSETEX",
+            "PEXPIRE",
+            "PEXPIREAT",
+            "EXPIREAT",
+            "PERSIST",
+            "TTL",
+            "PTTL",
+            "EXPIRE",
+            "CLIENT",
+            "LATENCY",
+            "SLOWLOG",
+            "MEMORY",
+            "BGREWRITEAOF"
+        ]
+    );
 
     // @all = union of all commands
     let all: HashSet<String> = cats.values().flat_map(|s| s.iter().cloned()).collect();
@@ -167,12 +684,7 @@ impl AclManager {
 
     /// Check if a command is allowed for a given user.
     /// Returns Ok(()) if allowed, Err(reason) if denied. Logs denials internally.
-    pub fn check_command(
-        &self,
-        user: &AclUser,
-        cmd: &str,
-        keys: &[Bytes],
-    ) -> Result<(), String> {
+    pub fn check_command(&self, user: &AclUser, cmd: &str, keys: &[Bytes]) -> Result<(), String> {
         let check_result = self.check_command_inner(user, cmd, keys);
         if let Err(ref reason) = check_result {
             self.log_denial(&user.name, cmd, reason);
@@ -180,17 +692,9 @@ impl AclManager {
         check_result
     }
 
-    fn check_command_inner(
-        &self,
-        user: &AclUser,
-        cmd: &str,
-        keys: &[Bytes],
-    ) -> Result<(), String> {
+    fn check_command_inner(&self, user: &AclUser, cmd: &str, keys: &[Bytes]) -> Result<(), String> {
         if !user.enabled {
-            return Err(format!(
-                "ERR User '{}' is disabled",
-                user.name
-            ));
+            return Err(format!("ERR User '{}' is disabled", user.name));
         }
 
         let cmd_upper = cmd.to_ascii_uppercase();
@@ -325,7 +829,11 @@ impl AclManager {
     pub fn user_rules(&self, user: &AclUser) -> Vec<String> {
         let mut rules = Vec::new();
         rules.push(format!("user {}", user.name));
-        rules.push(if user.enabled { "on".into() } else { "off".into() });
+        rules.push(if user.enabled {
+            "on".into()
+        } else {
+            "off".into()
+        });
         if user.nopass {
             rules.push("nopass".into());
         }
@@ -541,10 +1049,7 @@ fn global_acl() -> &'static AclManager {
 // Command handlers
 // ---------------------------------------------------------------------------
 
-pub async fn handle(
-    args: &[Bytes],
-    client: Arc<std::sync::RwLock<ClientCtx>>,
-) -> RespValue {
+pub async fn handle(args: &[Bytes], client: Arc<std::sync::RwLock<ClientCtx>>) -> RespValue {
     if args.is_empty() {
         return RespValue::Error("ERR wrong number of arguments for 'acl' command".into());
     }
@@ -614,7 +1119,11 @@ async fn cmd_acl_getuser(acl: &AclManager, args: &[Bytes]) -> RespValue {
         RespValue::bulk(Bytes::from("flags")),
         RespValue::array({
             let mut flags = Vec::new();
-            flags.push(RespValue::bulk(Bytes::from(if user.enabled { "on" } else { "off" })));
+            flags.push(RespValue::bulk(Bytes::from(if user.enabled {
+                "on"
+            } else {
+                "off"
+            })));
             if user.nopass {
                 flags.push(RespValue::bulk(Bytes::from("nopass")));
             }
@@ -767,13 +1276,21 @@ fn acl_log_entries(entries: Vec<AclLogEntry>) -> RespValue {
 async fn cmd_acl_help() -> RespValue {
     let help = vec![
         RespValue::bulk(Bytes::from("ACL <subcommand> [args...]")),
-        RespValue::bulk(Bytes::from("  WHOAMI - Return the current connection username")),
+        RespValue::bulk(Bytes::from(
+            "  WHOAMI - Return the current connection username",
+        )),
         RespValue::bulk(Bytes::from("  LIST - Show all user rules")),
         RespValue::bulk(Bytes::from("  USERS - List all usernames")),
         RespValue::bulk(Bytes::from("  GETUSER <username> - Get user details")),
-        RespValue::bulk(Bytes::from("  SETUSER <username> [rules...] - Create/update user")),
-        RespValue::bulk(Bytes::from("  DELUSER <username> [username...] - Delete users")),
-        RespValue::bulk(Bytes::from("  CAT [category] - List categories or commands")),
+        RespValue::bulk(Bytes::from(
+            "  SETUSER <username> [rules...] - Create/update user",
+        )),
+        RespValue::bulk(Bytes::from(
+            "  DELUSER <username> [username...] - Delete users",
+        )),
+        RespValue::bulk(Bytes::from(
+            "  CAT [category] - List categories or commands",
+        )),
         RespValue::bulk(Bytes::from("  LOG [count|RESET] - ACL denial log")),
     ];
     RespValue::array(help)
@@ -783,17 +1300,17 @@ async fn cmd_acl_help() -> RespValue {
 // AUTH command handler
 // ---------------------------------------------------------------------------
 
-pub async fn cmd_auth(
-    args: &[Bytes],
-    client: Arc<std::sync::RwLock<ClientCtx>>,
-) -> RespValue {
+pub async fn cmd_auth(args: &[Bytes], client: Arc<std::sync::RwLock<ClientCtx>>) -> RespValue {
     let acl = global_acl();
 
     let (username, password) = match args.len() {
-        1 => ("default", match std::str::from_utf8(&args[0]) {
-            Ok(s) => s,
-            Err(_) => return RespValue::Error("ERR invalid password".into()),
-        }),
+        1 => (
+            "default",
+            match std::str::from_utf8(&args[0]) {
+                Ok(s) => s,
+                Err(_) => return RespValue::Error("ERR invalid password".into()),
+            },
+        ),
         2 => (
             match std::str::from_utf8(&args[0]) {
                 Ok(s) => s,
@@ -825,11 +1342,7 @@ pub async fn cmd_auth(
 
 /// Check if the current user can execute the given command with the given keys.
 /// Returns Ok(()) if allowed. On failure, logs to ACL log and returns Err.
-pub fn check_permission(
-    client: &ClientCtx,
-    cmd: &str,
-    keys: &[Bytes],
-) -> Result<(), String> {
+pub fn check_permission(client: &ClientCtx, cmd: &str, keys: &[Bytes]) -> Result<(), String> {
     let acl = global_acl();
     let username = client.name.as_deref().unwrap_or("default");
     let user = acl.get_user(username).unwrap_or_else(|| acl.default_user());
@@ -885,7 +1398,17 @@ mod tests {
             name: "testuser".into(),
             ..Default::default()
         };
-        apply_rules(&mut user, &["on".into(), "+get".into(), "+set".into(), "resetkeys".into(), "~cache:*".into()]).unwrap();
+        apply_rules(
+            &mut user,
+            &[
+                "on".into(),
+                "+get".into(),
+                "+set".into(),
+                "resetkeys".into(),
+                "~cache:*".into(),
+            ],
+        )
+        .unwrap();
         acl.set_user(user);
 
         let retrieved = acl.get_user("testuser").unwrap();
@@ -943,7 +1466,9 @@ mod tests {
             ..Default::default()
         };
         // GET should be allowed
-        assert!(acl.check_command(&user, "GET", &[Bytes::from("key")]).is_ok());
+        assert!(acl
+            .check_command(&user, "GET", &[Bytes::from("key")])
+            .is_ok());
         // SET should be denied
         let result = acl.check_command(&user, "SET", &[Bytes::from("key")]);
         assert!(result.is_err());
@@ -980,7 +1505,9 @@ mod tests {
             ..Default::default()
         };
         // Matching key
-        assert!(acl.check_command(&user, "GET", &[Bytes::from("cache:123")]).is_ok());
+        assert!(acl
+            .check_command(&user, "GET", &[Bytes::from("cache:123")])
+            .is_ok());
         // Non-matching key
         let result = acl.check_command(&user, "GET", &[Bytes::from("other:key")]);
         assert!(result.is_err());
@@ -1075,7 +1602,16 @@ mod tests {
             channels: vec![],
             ..Default::default()
         };
-        apply_rules(&mut user, &["reset".into(), "on".into(), "nopass".into(), "allkeys".into()]).unwrap();
+        apply_rules(
+            &mut user,
+            &[
+                "reset".into(),
+                "on".into(),
+                "nopass".into(),
+                "allkeys".into(),
+            ],
+        )
+        .unwrap();
         assert!(user.enabled);
         assert!(user.nopass);
         assert!(user.passwords.is_empty());
@@ -1089,12 +1625,24 @@ mod tests {
             name: "catuser".into(),
             ..Default::default()
         };
-        apply_rules(&mut user, &["on".into(), "nocommands".into(), "+@read".into(), "-@write".into(), "~app:*".into()]).unwrap();
+        apply_rules(
+            &mut user,
+            &[
+                "on".into(),
+                "nocommands".into(),
+                "+@read".into(),
+                "-@write".into(),
+                "~app:*".into(),
+            ],
+        )
+        .unwrap();
         acl.set_user(user.clone());
 
         // GET is in @read category
         // GET is in @read category
-        assert!(acl.check_command(&user, "GET", &[Bytes::from("app:key")]).is_ok());
+        assert!(acl
+            .check_command(&user, "GET", &[Bytes::from("app:key")])
+            .is_ok());
         // SET is in @write category (denied)
         let result = acl.check_command(&user, "SET", &[Bytes::from("app:key")]);
         assert!(result.is_err());

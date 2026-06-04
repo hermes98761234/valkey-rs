@@ -23,7 +23,9 @@ pub fn sadd(store: &Arc<Store>, args: &[Bytes]) -> RespValue {
     let set = match &mut entry {
         DataType::Set(s) => s,
         _ => {
-            return RespValue::Error("WRONGTYPE Operation against a key holding the wrong kind of value".into());
+            return RespValue::Error(
+                "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
+            );
         }
     };
 
@@ -59,7 +61,9 @@ pub fn smembers(store: &Arc<Store>, args: &[Bytes]) -> RespValue {
             let arr: Vec<RespValue> = s.iter().map(|m| bulk(m.clone())).collect();
             RespValue::Array(Some(arr))
         }
-        _ => RespValue::Error("WRONGTYPE Operation against a key holding the wrong kind of value".into()),
+        _ => RespValue::Error(
+            "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
+        ),
     }
 }
 
@@ -86,7 +90,9 @@ pub fn sismember(store: &Arc<Store>, args: &[Bytes]) -> RespValue {
                 RespValue::Integer(0)
             }
         }
-        _ => RespValue::Error("WRONGTYPE Operation against a key holding the wrong kind of value".into()),
+        _ => RespValue::Error(
+            "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
+        ),
     }
 }
 
@@ -123,7 +129,9 @@ pub fn smismember(store: &Arc<Store>, args: &[Bytes]) -> RespValue {
                 .collect();
             RespValue::Array(Some(arr))
         }
-        _ => RespValue::Error("WRONGTYPE Operation against a key holding the wrong kind of value".into()),
+        _ => RespValue::Error(
+            "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
+        ),
     }
 }
 
@@ -143,7 +151,9 @@ pub fn scard(store: &Arc<Store>, args: &[Bytes]) -> RespValue {
 
     match entry {
         DataType::Set(s) => RespValue::Integer(s.len() as i64),
-        _ => RespValue::Error("WRONGTYPE Operation against a key holding the wrong kind of value".into()),
+        _ => RespValue::Error(
+            "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
+        ),
     }
 }
 
@@ -165,7 +175,9 @@ pub fn srem(store: &Arc<Store>, args: &[Bytes]) -> RespValue {
     let set = match &mut entry {
         DataType::Set(s) => s,
         _ => {
-            return RespValue::Error("WRONGTYPE Operation against a key holding the wrong kind of value".into());
+            return RespValue::Error(
+                "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
+            );
         }
     };
 
@@ -216,7 +228,9 @@ pub fn spop(store: &Arc<Store>, args: &[Bytes]) -> RespValue {
     let set = match &mut entry {
         DataType::Set(s) => s,
         _ => {
-            return RespValue::Error("WRONGTYPE Operation against a key holding the wrong kind of value".into());
+            return RespValue::Error(
+                "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
+            );
         }
     };
 
@@ -269,7 +283,9 @@ pub fn srandmember(store: &Arc<Store>, args: &[Bytes]) -> RespValue {
     let set = match &entry {
         DataType::Set(s) => s,
         _ => {
-            return RespValue::Error("WRONGTYPE Operation against a key holding the wrong kind of value".into());
+            return RespValue::Error(
+                "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
+            );
         }
     };
 
@@ -343,7 +359,9 @@ pub fn smove(store: &Arc<Store>, args: &[Bytes]) -> RespValue {
     let src_set = match &mut src_entry {
         DataType::Set(s) => s,
         _ => {
-            return RespValue::Error("WRONGTYPE Operation against a key holding the wrong kind of value".into());
+            return RespValue::Error(
+                "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
+            );
         }
     };
 
@@ -363,7 +381,9 @@ pub fn smove(store: &Arc<Store>, args: &[Bytes]) -> RespValue {
             s.insert(member.clone());
         }
         _ => {
-            return RespValue::Error("WRONGTYPE Operation against a key holding the wrong kind of value".into());
+            return RespValue::Error(
+                "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
+            );
         }
     }
 
@@ -385,7 +405,9 @@ pub fn sunion(store: &Arc<Store>, args: &[Bytes]) -> RespValue {
             match &entry.data {
                 DataType::Set(s) => result_set.extend(s.iter().cloned()),
                 _ => {
-                    return RespValue::Error("WRONGTYPE Operation against a key holding the wrong kind of value".into());
+                    return RespValue::Error(
+                        "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
+                    );
                 }
             }
         }
@@ -409,7 +431,9 @@ pub fn sinter(store: &Arc<Store>, args: &[Bytes]) -> RespValue {
             match &entry.data {
                 DataType::Set(s) => sets.push(s.clone()),
                 _ => {
-                    return RespValue::Error("WRONGTYPE Operation against a key holding the wrong kind of value".into());
+                    return RespValue::Error(
+                        "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
+                    );
                 }
             }
         } else {
@@ -454,7 +478,9 @@ pub fn sdiff(store: &Arc<Store>, args: &[Bytes]) -> RespValue {
             match &entry.data {
                 DataType::Set(s) => sets.push(s.clone()),
                 _ => {
-                    return RespValue::Error("WRONGTYPE Operation against a key holding the wrong kind of value".into());
+                    return RespValue::Error(
+                        "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
+                    );
                 }
             }
         } else if idx == 0 {
@@ -493,7 +519,9 @@ pub fn sunionstore(store: &Arc<Store>, args: &[Bytes]) -> RespValue {
             match &entry.data {
                 DataType::Set(s) => result_set.extend(s.iter().cloned()),
                 _ => {
-                    return RespValue::Error("WRONGTYPE Operation against a key holding the wrong kind of value".into());
+                    return RespValue::Error(
+                        "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
+                    );
                 }
             }
         }
@@ -520,7 +548,9 @@ pub fn sinterstore(store: &Arc<Store>, args: &[Bytes]) -> RespValue {
             match &entry.data {
                 DataType::Set(s) => sets.push(s.clone()),
                 _ => {
-                    return RespValue::Error("WRONGTYPE Operation against a key holding the wrong kind of value".into());
+                    return RespValue::Error(
+                        "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
+                    );
                 }
             }
         } else {
@@ -569,7 +599,9 @@ pub fn sdiffstore(store: &Arc<Store>, args: &[Bytes]) -> RespValue {
             match &entry.data {
                 DataType::Set(s) => sets.push(s.clone()),
                 _ => {
-                    return RespValue::Error("WRONGTYPE Operation against a key holding the wrong kind of value".into());
+                    return RespValue::Error(
+                        "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
+                    );
                 }
             }
         } else if idx == 0 {
@@ -660,7 +692,9 @@ pub fn sscan(store: &Arc<Store>, args: &[Bytes]) -> RespValue {
     let set = match entry {
         DataType::Set(s) => s,
         _ => {
-            return RespValue::Error("WRONGTYPE Operation against a key holding the wrong kind of value".into());
+            return RespValue::Error(
+                "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
+            );
         }
     };
 

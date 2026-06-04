@@ -20,8 +20,16 @@ fn test_tls_config_loads() {
     let cert_path = tls_certs::server_cert_path();
     let key_path = tls_certs::server_key_path();
 
-    assert!(cert_path.exists(), "cert file not found: {}", cert_path.display());
-    assert!(key_path.exists(), "key file not found: {}", key_path.display());
+    assert!(
+        cert_path.exists(),
+        "cert file not found: {}",
+        cert_path.display()
+    );
+    assert!(
+        key_path.exists(),
+        "key file not found: {}",
+        key_path.display()
+    );
 
     // Read and parse the cert
     let cert_file = std::fs::File::open(&cert_path).expect("failed to open cert");
@@ -32,8 +40,8 @@ fn test_tls_config_loads() {
 
     // Read and parse the key
     let key_file = std::fs::File::open(&key_path).expect("failed to open key");
-    let key = rustls_pemfile::private_key(&mut BufReader::new(key_file))
-        .expect("failed to parse key");
+    let key =
+        rustls_pemfile::private_key(&mut BufReader::new(key_file)).expect("failed to parse key");
     assert!(key.is_some(), "no private key found");
 }
 
@@ -104,18 +112,31 @@ async fn test_tls_ping() {
         match TcpStream::connect(format!("127.0.0.1:{}", tls_port)).await {
             Ok(tcp) => {
                 let name = ServerName::try_from("localhost").expect("invalid server name");
-                match tokio::time::timeout(Duration::from_secs(5), connector.clone().connect(name, tcp)).await {
+                match tokio::time::timeout(
+                    Duration::from_secs(5),
+                    connector.clone().connect(name, tcp),
+                )
+                .await
+                {
                     Ok(Ok(mut stream)) => {
                         // Server is ready - send a PING command
                         let ping = b"*1\r\n$4\r\nPING\r\n";
                         if stream.write_all(ping).await.is_ok() && stream.flush().await.is_ok() {
                             let mut buf = [0u8; 64];
-                            match tokio::time::timeout(Duration::from_secs(3), stream.read(&mut buf)).await {
+                            match tokio::time::timeout(
+                                Duration::from_secs(3),
+                                stream.read(&mut buf),
+                            )
+                            .await
+                            {
                                 Ok(Ok(n)) if n > 0 => {
                                     let resp = String::from_utf8_lossy(&buf[..n]);
                                     // Verify we got a valid RESP response (starts with + or -)
-                                    assert!(resp.starts_with('+') || resp.starts_with('-'),
-                                        "expected RESP response, got: {:?}", resp);
+                                    assert!(
+                                        resp.starts_with('+') || resp.starts_with('-'),
+                                        "expected RESP response, got: {:?}",
+                                        resp
+                                    );
                                     ready = true;
                                     break;
                                 }
@@ -141,13 +162,15 @@ async fn test_tls_ping() {
         .await
         .expect("failed to connect to TLS server");
 
-    let server_name = ServerName::try_from("localhost")
-        .expect("invalid server name");
+    let server_name = ServerName::try_from("localhost").expect("invalid server name");
 
     let mut tls_stream = tokio::time::timeout(
         Duration::from_secs(5),
-        connector.connect(server_name, tcp_stream)
-    ).await.expect("TLS handshake timed out").expect("TLS handshake failed");
+        connector.connect(server_name, tcp_stream),
+    )
+    .await
+    .expect("TLS handshake timed out")
+    .expect("TLS handshake failed");
 
     // Send PING command
     let ping = b"*1\r\n$4\r\nPING\r\n";
@@ -156,12 +179,18 @@ async fn test_tls_ping() {
 
     // Read response
     let mut buf = [0u8; 64];
-    let n = tls_stream.read(&mut buf).await.expect("failed to read response");
+    let n = tls_stream
+        .read(&mut buf)
+        .await
+        .expect("failed to read response");
     let resp = String::from_utf8_lossy(&buf[..n]);
 
     // The server should respond with a RESP simple string (+PONG) or error
-    assert!(resp.starts_with('+') || resp.starts_with('-'),
-        "expected RESP response, got: {:?}", resp);
+    assert!(
+        resp.starts_with('+') || resp.starts_with('-'),
+        "expected RESP response, got: {:?}",
+        resp
+    );
 
     // Cleanup
     let _ = child.kill().await;

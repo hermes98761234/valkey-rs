@@ -46,7 +46,10 @@ pub fn init_cluster(config: &ClusterConfig, bind_addr: &str) -> Option<Arc<Clust
         return None;
     }
 
-    info!("Initializing cluster mode (config_file={})", config.config_file);
+    info!(
+        "Initializing cluster mode (config_file={})",
+        config.config_file
+    );
 
     // Load or generate node ID
     let node_id = load_or_generate_node_id(&config.config_file);
@@ -143,11 +146,7 @@ fn load_nodes_conf(state: &Arc<ClusterState>, config_file: &str) {
         }
     }
 
-    info!(
-        "Loaded {} nodes from {}",
-        state.nodes.len(),
-        config_file
-    );
+    info!("Loaded {} nodes from {}", state.nodes.len(), config_file);
 }
 
 #[cfg(test)]

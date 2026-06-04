@@ -9,9 +9,7 @@ use crate::Db;
 pub async fn cmd_multi(client: Arc<RwLock<ClientCtx>>) -> RespValue {
     let mut ctx = client.write().unwrap();
     if ctx.multi {
-        return RespValue::Error(
-            "ERR MULTI calls can not be nested".into(),
-        );
+        return RespValue::Error("ERR MULTI calls can not be nested".into());
     }
     ctx.multi = true;
     ctx.queue.clear();
@@ -33,10 +31,7 @@ pub async fn cmd_discard(client: Arc<RwLock<ClientCtx>>) -> RespValue {
 }
 
 // EXEC — execute queued commands
-pub async fn cmd_exec(
-    client: Arc<RwLock<ClientCtx>>,
-    store: Db,
-) -> RespValue {
+pub async fn cmd_exec(client: Arc<RwLock<ClientCtx>>, store: Db) -> RespValue {
     let (queue, dirty) = {
         let mut ctx = client.write().unwrap();
         if !ctx.multi {
@@ -61,7 +56,12 @@ pub async fn cmd_exec(
     };
     let mut results = Vec::with_capacity(queue.len());
     for cmd in &queue {
-        let response = Box::pin(crate::dispatch_ctx(cmd.clone(), Arc::clone(&store), &cmd_ctx)).await;
+        let response = Box::pin(crate::dispatch_ctx(
+            cmd.clone(),
+            Arc::clone(&store),
+            &cmd_ctx,
+        ))
+        .await;
         results.push(response);
     }
 
@@ -69,21 +69,13 @@ pub async fn cmd_exec(
 }
 
 // WATCH — watch keys for optimistic locking
-pub async fn cmd_watch(
-    args: &[Bytes],
-    client: Arc<RwLock<ClientCtx>>,
-    store: &Db,
-) -> RespValue {
+pub async fn cmd_watch(args: &[Bytes], client: Arc<RwLock<ClientCtx>>, store: &Db) -> RespValue {
     if args.is_empty() {
-        return RespValue::Error(
-            "ERR wrong number of arguments for 'watch' command".into(),
-        );
+        return RespValue::Error("ERR wrong number of arguments for 'watch' command".into());
     }
     let mut ctx = client.write().unwrap();
     if ctx.multi {
-        return RespValue::Error(
-            "ERR WATCH inside MULTI is not allowed".into(),
-        );
+        return RespValue::Error("ERR WATCH inside MULTI is not allowed".into());
     }
     ctx.watched = args.to_vec();
     ctx.dirty = false;
@@ -136,7 +128,7 @@ pub async fn handle(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{CommandCtx, dispatch_ctx};
+    use crate::{dispatch_ctx, CommandCtx};
     use bytes::Bytes;
     use std::sync::Arc;
 

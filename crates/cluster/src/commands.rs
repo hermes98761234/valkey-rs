@@ -144,10 +144,9 @@ impl ClusterCommandHandler {
             peer_id,
             addr,
             NodeRole::Master,
-            {
-                let mut f = crate::state::NodeFlags::default();
-                f.handshake = true;
-                f
+            crate::state::NodeFlags {
+                handshake: true,
+                ..Default::default()
             },
         );
 
@@ -273,10 +272,7 @@ impl ClusterCommandHandler {
             let slot: u16 = match String::from_utf8_lossy(arg).parse() {
                 Ok(s) => s,
                 Err(_) => {
-                    return format!(
-                        "-ERR Invalid slot: {}\r\n",
-                        String::from_utf8_lossy(arg)
-                    );
+                    return format!("-ERR Invalid slot: {}\r\n", String::from_utf8_lossy(arg));
                 }
             };
             let mut slots = self.state.slots.write().unwrap();
@@ -298,10 +294,7 @@ impl ClusterCommandHandler {
             let slot: u16 = match String::from_utf8_lossy(arg).parse() {
                 Ok(s) => s,
                 Err(_) => {
-                    return format!(
-                        "-ERR Invalid slot: {}\r\n",
-                        String::from_utf8_lossy(arg)
-                    );
+                    return format!("-ERR Invalid slot: {}\r\n", String::from_utf8_lossy(arg));
                 }
             };
             let mut slots = self.state.slots.write().unwrap();

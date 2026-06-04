@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
-use tracing::{info, warn, error};
+use tracing::{error, info, warn};
 
 use valkey_persistence::rdb;
 use valkey_storage::Store;
@@ -86,8 +86,7 @@ pub async fn cmd_replicaof(
     let host = std::str::from_utf8(&args[0])
         .map_err(|_| "ERR invalid host")?
         .to_string();
-    let port_str = std::str::from_utf8(&args[1])
-        .map_err(|_| "ERR invalid port")?;
+    let port_str = std::str::from_utf8(&args[1]).map_err(|_| "ERR invalid port")?;
 
     // Handle NO ONE
     if host.eq_ignore_ascii_case("NO") && port_str.eq_ignore_ascii_case("ONE") {
@@ -172,9 +171,13 @@ async fn perform_sync(
         ("?".to_string(), -1i64)
     };
 
-    let psync_cmd = format!("*3\r\n$5\r\nPSYNC\r\n${}\r\n{}\r\n${}\r\n{}\r\n",
-        repl_id.len(), repl_id,
-        offset.to_string().len(), offset);
+    let psync_cmd = format!(
+        "*3\r\n$5\r\nPSYNC\r\n${}\r\n{}\r\n${}\r\n{}\r\n",
+        repl_id.len(),
+        repl_id,
+        offset.to_string().len(),
+        offset
+    );
     write_all_resp(&mut write_half, psync_cmd.as_bytes()).await?;
 
     // Step 5: Read the response (+FULLRESYNC or +CONTINUE)
@@ -183,11 +186,14 @@ async fn perform_sync(
 
     if line.starts_with("+FULLRESYNC") {
         // Parse: +FULLRESYNC <repl_id> <offset>\r\n
-        let parts: Vec<&str> = line.trim().split_whitespace().collect();
+        let parts: Vec<&str> = line.split_whitespace().collect();
         if parts.len() >= 3 {
             let master_id = parts[1].to_string();
             let master_offset: u64 = parts[2].parse().unwrap_or(0);
-            info!("Replica: FULLRESYNC from repl_id={} offset={}", master_id, master_offset);
+            info!(
+                "Replica: FULLRESYNC from repl_id={} offset={}",
+                master_id, master_offset
+            );
             *repl_state.master_repl_id.lock().unwrap() = Some(master_id);
             repl_state.set_offset(master_offset);
         }
@@ -199,7 +205,9 @@ async fn perform_sync(
         if !line.starts_with('$') {
             return Err(format!("Expected RDB bulk string, got: {}", line.trim()).into());
         }
-        let rdb_len: usize = line[1..].trim().parse()
+        let rdb_len: usize = line[1..]
+            .trim()
+            .parse()
             .map_err(|e| format!("Invalid RDB length: {}", e))?;
 
         // Read RDB data + trailing \r\n
@@ -213,7 +221,8 @@ async fn perform_sync(
         // Load RDB into store
         let rdb_path = std::env::temp_dir().join("valkey-repl-replica.rdb");
         tokio::fs::write(&rdb_path, rdb_data).await?;
-        rdb::load(store, &rdb_path).await
+        rdb::load(store, &rdb_path)
+            .await
             .map_err(|e| format!("RDB load error: {}", e))?;
         let _ = tokio::fs::remove_file(&rdb_path).await;
 
