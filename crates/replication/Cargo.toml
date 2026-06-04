@@ -4,3 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+tokio = { workspace = true }
+bytes = { workspace = true }
+thiserror = { workspace = true }
+valkey-proto = { path = "../proto" }
+valkey-storage = { path = "../storage" }
+valkey-persistence = { path = "../persistence" }
+tracing = { workspace = true }
+dashmap = { workspace = true }

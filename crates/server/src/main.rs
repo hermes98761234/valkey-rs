@@ -190,12 +190,30 @@ where
             }
         };
 
+        // Check if this server is a read-only replica and reject write commands
+        if let Some(ref state) = valkey_commands::replication::replica_state() {
+            if state.is_read_only() && is_write_command(&cmd_bytes) {
+                let resp = RespValue::Error(
+                    "ERR READONLY You can't write against a read only replica.".into(),
+                );
+                framed_write.send(resp).await?;
+                continue;
+            }
+        }
+
         let response = dispatch(cmd_bytes.clone(), Arc::clone(&store)).await;
 
-        // If this is a write command and it succeeded, append to AOF
-        if aof_enabled() && is_write_command(&cmd_bytes) {
+        // If this is a write command and it succeeded, append to AOF and propagate to replicas
+        if is_write_command(&cmd_bytes) {
             if !matches!(response, RespValue::Error(_)) {
-                aof_append(&cmd_bytes).await;
+                if aof_enabled() {
+                    aof_append(&cmd_bytes).await;
+                }
+                // Propagate to replicas
+                if let Some(ref mgr) = valkey_commands::replication::replication_manager() {
+                    let encoded = valkey_replication::leader::encode_repl_command(&cmd_bytes);
+                    mgr.propagate(encoded, cmd_bytes.iter().map(|b| b.len() as u64).sum::<u64>() + (cmd_bytes.len() * 3) as u64).await;
+                }
             }
         }
 
@@ -272,6 +290,12 @@ async fn main() -> anyhow::Result<()> {
     let writer = AofWriter::open(&aof_path, fsync).await?;
     let _ = AOF_WRITER.set(Some(Arc::new(writer)));
     info!("AOF enabled: {}", aof_path.display());
+
+    // Initialize replication
+    let repl_state = valkey_replication::ReplicaState::new();
+    let repl_mgr = valkey_replication::ReplicationManager::new(Arc::clone(&store));
+    valkey_commands::replication::init_replication(Some(repl_mgr.clone()), Arc::clone(&repl_state));
+    info!("Replication manager initialized: repl_id={}", repl_mgr.repl_id());
 
     // Auto-save background task
     let auto_store = Arc::clone(&store);

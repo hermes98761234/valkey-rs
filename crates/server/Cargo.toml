@@ -22,3 +22,4 @@ valkey-proto = { path = "../proto" }
 valkey-storage = { path = "../storage" }
 valkey-commands = { path = "../commands" }
 valkey-persistence = { path = "../persistence" }
+valkey-replication = { path = "../replication" }

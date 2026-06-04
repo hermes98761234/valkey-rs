@@ -13,6 +13,7 @@ pub mod set;
 pub mod pubsub;
 pub mod transaction;
 pub mod acl;
+pub mod replication;
 
 pub type Db = Arc<Store>;
 
@@ -79,7 +80,7 @@ pub async fn dispatch_ctx(cmd: Vec<Bytes>, store: Db, ctx: &CommandCtx) -> RespV
         "PING" | "ECHO" | "SELECT" | "DBSIZE" | "FLUSHDB" | "FLUSHALL"
         | "INFO" | "COMMAND" | "CONFIG" | "SAVE" | "BGSAVE" | "BGREWRITEAOF"
         | "LASTSAVE" | "TIME" | "LATENCY" | "SLOWLOG" | "MEMORY" | "CLIENT"
-        | "DEBUG" | "OBJECT" | "RESET" => {
+        | "DEBUG" | "OBJECT" | "RESET" | "REPLCONF" | "REPLICAOF" | "SLAVEOF" => {
             server::handle(&cmd, &store, ctx.client.clone(), ctx.config.clone()).await
         }
         "QUIT" => return RespValue::SimpleString("OK".into()),
@@ -89,8 +90,11 @@ pub async fn dispatch_ctx(cmd: Vec<Bytes>, store: Db, ctx: &CommandCtx) -> RespV
         |"GETEX"|"GETDEL" => string::handle(&cmd, &store).await,
         "EXISTS"|"TYPE"|"RENAME"|"RENAMENX"|"EXPIRE"|"PEXPIRE"|"EXPIREAT"
         |"PEXPIREAT"|"TTL"|"PTTL"|"PERSIST"|"KEYS"|"SCAN"|"RANDOMKEY"
-        |"MOVE"|"COPY"|"DUMP"|"RESTORE"|"WAIT"|"SORT"|"UNLINK" => {
+        |"MOVE"|"COPY"|"DUMP"|"RESTORE"|"SORT"|"UNLINK" => {
             keys::handle(&cmd, &store).await
+        }
+        "WAIT" => {
+            replication::cmd_wait(&cmd[1..]).await
         }
         "LPUSH"|"RPUSH"|"LPOP"|"RPOP"|"LRANGE"|"LLEN"|"LINDEX"|"LSET"
         |"LINSERT"|"LREM"|"LTRIM"|"LMOVE"|"BLPOP"|"BRPOP" => {
@@ -150,6 +154,7 @@ pub async fn dispatch_ctx(cmd: Vec<Bytes>, store: Db, ctx: &CommandCtx) -> RespV
                 "ZSCAN" => zset::zscan(&store, args),
                 "ZRANDMEMBER" => zset::zrandmember(&store, args),
                 "ZRANGESTORE" => zset::zrangestore(&store, args),
+                "PSYNC" => Ok(replication::cmd_psync(&cmd[1..], &store).await),
                 _ => return RespValue::Error(format!("ERR unknown command `{}`", name).into()),
             };
             match r { Ok(v) => v, Err(e) => RespValue::Error(e) }

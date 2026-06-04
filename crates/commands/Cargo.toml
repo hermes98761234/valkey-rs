@@ -12,6 +12,7 @@ valkey-storage = { path = "../storage" }
 valkey-pubsub = { path = "../pubsub" }
 valkey-persistence = { path = "../persistence" }
 valkey-scripting = { path = "../scripting" }
+valkey-replication = { path = "../replication" }
 dashmap = { workspace = true }
 fastrand = "2"
 rand = "0.8"

@@ -234,6 +234,9 @@ pub async fn handle(
                 "CLIENT" => cmd_client(args, _client).await,
                 "DEBUG" => cmd_debug(args).await,
                 "OBJECT" => cmd_object(args, store).await,
+                "REPLCONF" => crate::replication::handle_replconf(args).await,
+                "REPLICAOF" => crate::replication::cmd_replicaof(args, store).await,
+                "SLAVEOF" => crate::replication::cmd_replicaof(args, store).await,
                 _ => RespValue::Error(format!("ERR unknown command `{}`", cmd_name).into()),
             }
         }
