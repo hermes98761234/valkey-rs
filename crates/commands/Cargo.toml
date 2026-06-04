@@ -4,13 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-valkey-proto = { path = "../proto" }
-valkey-storage = { path = "../storage" }
+tokio = { workspace = true }
 bytes = { workspace = true }
 thiserror = { workspace = true }
-ordered-float = { workspace = true }
+valkey-proto = { path = "../proto" }
+valkey-storage = { path = "../storage" }
 dashmap = { workspace = true }
 fastrand = "2"
-
-[dev-dependencies]
-tokio = { workspace = true, features = ["rt", "macros"] }
