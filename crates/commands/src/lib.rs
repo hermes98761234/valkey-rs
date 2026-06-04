@@ -1,14 +1,43 @@
 use bytes::Bytes;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock, RwLock};
 use valkey_proto::RespValue;
 use valkey_storage::Store;
 
 pub mod string;
+pub mod keys;
+pub mod server;
 pub mod zset;
+pub mod list;
+pub mod hash;
+pub mod set;
+pub mod pubsub;
 
 pub type Db = Arc<Store>;
 
+pub struct CommandCtx {
+    pub client: Arc<RwLock<server::ClientCtx>>,
+    pub config: Arc<RwLock<server::ServerConfig>>,
+}
+
+impl CommandCtx {
+    pub fn new() -> Self {
+        Self {
+            client: Arc::new(RwLock::new(server::ClientCtx::new())),
+            config: Arc::new(RwLock::new(server::ServerConfig::default())),
+        }
+    }
+}
+
+fn global_ctx() -> &'static CommandCtx {
+    static CTX: OnceLock<CommandCtx> = OnceLock::new();
+    CTX.get_or_init(CommandCtx::new)
+}
+
 pub async fn dispatch(cmd: Vec<Bytes>, store: Db) -> RespValue {
+    dispatch_ctx(cmd, store, global_ctx()).await
+}
+
+pub async fn dispatch_ctx(cmd: Vec<Bytes>, store: Db, ctx: &CommandCtx) -> RespValue {
     if cmd.is_empty() {
         return RespValue::Error("ERR empty command".into());
     }
@@ -18,12 +47,44 @@ pub async fn dispatch(cmd: Vec<Bytes>, store: Db) -> RespValue {
     };
     let args = &cmd[1..];
     match name.as_str() {
-        "PING" => return RespValue::SimpleString("PONG".into()),
+        "PING" | "ECHO" | "SELECT" | "DBSIZE" | "FLUSHDB" | "FLUSHALL"
+        | "INFO" | "COMMAND" | "CONFIG" | "SAVE" | "BGSAVE" | "BGREWRITEAOF"
+        | "LASTSAVE" | "TIME" | "LATENCY" | "SLOWLOG" | "MEMORY" | "CLIENT"
+        | "DEBUG" | "OBJECT" | "RESET" => {
+            server::handle(args, &store, ctx.client.clone(), ctx.config.clone()).await
+        }
         "QUIT" => return RespValue::SimpleString("OK".into()),
         "GET"|"SET"|"DEL"|"GETSET"|"MGET"|"MSET"|"MSETNX"
         |"INCR"|"DECR"|"INCRBY"|"DECRBY"|"INCRBYFLOAT"|"APPEND"
         |"STRLEN"|"GETRANGE"|"SETRANGE"|"SETNX"|"SETEX"|"PSETEX"
         |"GETEX"|"GETDEL" => string::handle(&cmd, &store).await,
+        "EXISTS"|"TYPE"|"RENAME"|"RENAMENX"|"EXPIRE"|"PEXPIRE"|"EXPIREAT"
+        |"PEXPIREAT"|"TTL"|"PTTL"|"PERSIST"|"KEYS"|"SCAN"|"RANDOMKEY"
+        |"MOVE"|"COPY"|"DUMP"|"RESTORE"|"WAIT"|"SORT"|"UNLINK" => {
+            keys::handle(&cmd, &store).await
+        }
+        "LPUSH"|"RPUSH"|"LPOP"|"RPOP"|"LRANGE"|"LLEN"|"LINDEX"|"LSET"
+        |"LINSERT"|"LREM"|"LTRIM"|"LMOVE"|"BLPOP"|"BRPOP" => {
+            list::handle(&cmd, &store).await
+        }
+        "HSET"|"HGET"|"HMGET"|"HMSET"|"HGETALL"|"HDEL"|"HEXISTS"
+        |"HLEN"|"HKEYS"|"HVALS"|"HINCRBY"|"HINCRBYFLOAT"|"HSCAN"
+        |"HRANDFIELD" => {
+            hash::handle(&cmd)
+        }
+        "SADD"|"SMEMBERS"|"SISMEMBER"|"SMISMEMBER"|"SCARD"|"SREM"
+        |"SPOP"|"SRANDMEMBER"|"SMOVE"|"SUNION"|"SINTER"|"SDIFF"
+        |"SUNIONSTORE"|"SINTERSTORE"|"SDIFFSTORE"|"SSCAN" => {
+            set::handle(&cmd, &store)
+        }
+        "SUBSCRIBE"|"UNSUBSCRIBE"|"PSUBSCRIBE"|"PUNSUBSCRIBE"
+        |"PUBLISH"|"PUBSUB"|"SSUBSCRIBE"|"SUNSUBSCRIBE" => {
+            // PubSub commands need the hub - return error for now
+            // The actual pub/sub mode is handled at the connection level
+            return RespValue::Error(
+                "ERR PubSub commands must be handled in pub/sub mode".into(),
+            );
+        }
         _ => {
             let r = match name.as_str() {
                 "ZADD" => zset::zadd(&store, args),

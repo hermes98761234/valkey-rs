@@ -10,3 +10,4 @@ tokio = { workspace = true }
 ordered-float = { workspace = true }
 crossbeam-skiplist = { workspace = true }
 thiserror = { workspace = true }
+fastrand = "2"

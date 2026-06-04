@@ -321,7 +321,7 @@ mod tests {
     use valkey_storage::Store;
 
     fn test_store() -> Arc<Store> {
-        Arc::new(Store { keyspace: dashmap::DashMap::new() })
+        Store::new()
     }
 
     #[test] fn get_missing() {
