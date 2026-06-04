@@ -1,0 +1,16 @@
+[package]
+name = "valkey-commands"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+valkey-proto = { path = "../proto" }
+valkey-storage = { path = "../storage" }
+bytes = { workspace = true }
+thiserror = { workspace = true }
+ordered-float = { workspace = true }
+dashmap = { workspace = true }
+fastrand = "2"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt", "macros"] }

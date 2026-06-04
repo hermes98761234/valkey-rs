@@ -1,0 +1,14 @@
+[package]
+name = "valkey-server"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "valkey-server"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }

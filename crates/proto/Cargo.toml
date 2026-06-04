@@ -1,0 +1,9 @@
+[package]
+name = "valkey-proto"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bytes = { workspace = true }
+tokio-util = { workspace = true }
+thiserror = { workspace = true }

@@ -1,0 +1,30 @@
+[workspace]
+members = [
+  "crates/proto",
+  "crates/storage",
+  "crates/commands",
+  "crates/persistence",
+  "crates/replication",
+  "crates/cluster",
+  "crates/pubsub",
+  "crates/scripting",
+  "crates/server",
+]
+resolver = "2"
+
+[workspace.dependencies]
+tokio = { version = "1", features = ["full"] }
+tokio-util = { version = "0.7", features = ["codec"] }
+dashmap = "6"
+bytes = "1"
+mlua = { version = "0.10", features = ["lua54", "async", "send", "vendored"] }
+tokio-rustls = "0.26"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+thiserror = "2"
+anyhow = "1"
+ordered-float = "4"
+crossbeam-skiplist = "0.1"
+futures = "0.3"

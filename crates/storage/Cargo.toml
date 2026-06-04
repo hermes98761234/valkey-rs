@@ -1,0 +1,12 @@
+[package]
+name = "valkey-storage"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+dashmap = { workspace = true }
+bytes = { workspace = true }
+tokio = { workspace = true }
+ordered-float = { workspace = true }
+crossbeam-skiplist = { workspace = true }
+thiserror = { workspace = true }
