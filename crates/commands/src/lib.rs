@@ -80,7 +80,7 @@ pub async fn dispatch_ctx(cmd: Vec<Bytes>, store: Db, ctx: &CommandCtx) -> RespV
         | "INFO" | "COMMAND" | "CONFIG" | "SAVE" | "BGSAVE" | "BGREWRITEAOF"
         | "LASTSAVE" | "TIME" | "LATENCY" | "SLOWLOG" | "MEMORY" | "CLIENT"
         | "DEBUG" | "OBJECT" | "RESET" => {
-            server::handle(args, &store, ctx.client.clone(), ctx.config.clone()).await
+            server::handle(&cmd, &store, ctx.client.clone(), ctx.config.clone()).await
         }
         "QUIT" => return RespValue::SimpleString("OK".into()),
         "GET"|"SET"|"DEL"|"GETSET"|"MGET"|"MSET"|"MSETNX"

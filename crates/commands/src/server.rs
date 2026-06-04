@@ -189,41 +189,54 @@ impl ServerConfig {
 // ---------------------------------------------------------------------------
 
 pub async fn handle(
-    args: &[Bytes],
+    cmd: &[Bytes],
     store: &Arc<Store>,
     _client: Arc<RwLock<ClientCtx>>,
     config: Arc<RwLock<ServerConfig>>,
 ) -> RespValue {
-    if args.is_empty() {
-        return RespValue::Error("ERR wrong number of arguments".into());
-    }
-    let cmd = match std::str::from_utf8(&args[0]) {
-        Ok(s) => s.to_ascii_uppercase(),
-        Err(_) => return RespValue::Error("ERR invalid command name".into()),
+    let cmd_name = match cmd.first() {
+        Some(b) => match std::str::from_utf8(b) {
+            Ok(s) => s.to_ascii_uppercase(),
+            Err(_) => return RespValue::Error("ERR invalid command name".into()),
+        },
+        None => return RespValue::Error("ERR empty command".into()),
     };
-    match cmd.as_str() {
-        "PING" => cmd_ping(&args[1..]).await,
-        "ECHO" => cmd_echo(&args[1..]).await,
-        "SELECT" => cmd_select(&args[1..], _client).await,
-        "DBSIZE" => cmd_dbsize(&args[1..], store).await,
-        "FLUSHDB" => cmd_flushdb(&args[1..], store).await,
-        "FLUSHALL" => cmd_flushall(&args[1..], store).await,
-        "INFO" => cmd_info(&args[1..]).await,
-        "COMMAND" => cmd_command(&args[1..], store, _client, config).await,
-        "CONFIG" => cmd_config(&args[1..], config, store).await,
-        "SAVE" => cmd_save(&args[1..], store, config).await,
-        "BGSAVE" => cmd_bgsave(&args[1..], &store, config).await,
-        "BGREWRITEAOF" => cmd_bgrewriteaof(&args[1..]).await,
-        "LASTSAVE" => cmd_lastsave(&args[1..]).await,
-        "TIME" => cmd_time(&args[1..]).await,
-        "LATENCY" => cmd_latency(&args[1..]).await,
-        "SLOWLOG" => cmd_slowlog(&args[1..]).await,
-        "MEMORY" => cmd_memory(&args[1..], store).await,
-        "CLIENT" => cmd_client(&args[1..], _client).await,
-        "DEBUG" => cmd_debug(&args[1..]).await,
-        "OBJECT" => cmd_object(&args[1..], store).await,
-        "RESET" => cmd_reset(&args[1..], _client).await,
-        _ => RespValue::Error(format!("ERR unknown command `{}`", cmd)),
+    let args = &cmd[1..];
+    // Commands that take no arguments
+    match cmd_name.as_str() {
+        "PING" => cmd_ping(args).await,
+        "DBSIZE" => cmd_dbsize(args, store).await,
+        "FLUSHDB" => cmd_flushdb(args, store).await,
+        "FLUSHALL" => cmd_flushall(args, store).await,
+        "LASTSAVE" => cmd_lastsave(args).await,
+        "TIME" => cmd_time(args).await,
+        "RESET" => cmd_reset(args, _client.clone()).await,
+        _ => {
+            // All other commands require at least one argument
+            if args.len() < 2 {
+                return RespValue::Error(format!(
+                    "ERR wrong number of arguments for '{}' command",
+                    cmd_name
+                ).into());
+            }
+            match cmd_name.as_str() {
+                "ECHO" => cmd_echo(args).await,
+                "SELECT" => cmd_select(args, _client).await,
+                "INFO" => cmd_info(args).await,
+                "COMMAND" => cmd_command(args, store, _client, config).await,
+                "CONFIG" => cmd_config(args, config, store).await,
+                "SAVE" => cmd_save(args, store, config).await,
+                "BGSAVE" => cmd_bgsave(args, store, config).await,
+                "BGREWRITEAOF" => cmd_bgrewriteaof(args).await,
+                "LATENCY" => cmd_latency(args).await,
+                "SLOWLOG" => cmd_slowlog(args).await,
+                "MEMORY" => cmd_memory(args, store).await,
+                "CLIENT" => cmd_client(args, _client).await,
+                "DEBUG" => cmd_debug(args).await,
+                "OBJECT" => cmd_object(args, store).await,
+                _ => RespValue::Error(format!("ERR unknown command `{}`", cmd_name).into()),
+            }
+        }
     }
 }
 
