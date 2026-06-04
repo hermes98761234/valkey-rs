@@ -1689,13 +1689,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_save() {
-        let r = cmd_save(&[]).await;
+        let store = valkey_storage::Store::new();
+        let config = Arc::new(RwLock::new(ServerConfig::default()));
+        let r = cmd_save(&[], &store, config).await;
         assert_eq!(r, RespValue::ok());
     }
 
     #[tokio::test]
     async fn test_bgsave() {
-        let r = cmd_bgsave(&[]).await;
+        let store = valkey_storage::Store::new();
+        let config = Arc::new(RwLock::new(ServerConfig::default()));
+        let r = cmd_bgsave(&[], &store, config).await;
         assert_eq!(
             r,
             RespValue::SimpleString("Background saving started".into())

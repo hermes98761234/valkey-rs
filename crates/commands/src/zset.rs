@@ -721,6 +721,7 @@ mod tests {
             evicted_keys: ::std::sync::atomic::AtomicU64::new(0),
             evict_config: ::std::sync::RwLock::new(valkey_storage::EvictionConfig::default()),
             watchers: ::dashmap::DashMap::new(),
+            dirty_count: ::std::sync::atomic::AtomicU64::new(0),
         })
     }
 
