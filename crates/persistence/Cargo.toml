@@ -4,3 +4,14 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+tokio = { workspace = true }
+bytes = { workspace = true }
+thiserror = { workspace = true }
+valkey-storage = { path = "../storage" }
+crc = "3"
+ordered-float = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+dashmap = { workspace = true }
+tempfile = "3"
