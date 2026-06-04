@@ -11,3 +11,7 @@ valkey-proto = { path = "../proto" }
 valkey-storage = { path = "../storage" }
 dashmap = { workspace = true }
 fastrand = "2"
+rand = "0.8"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt", "macros"] }

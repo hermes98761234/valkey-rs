@@ -96,7 +96,7 @@ impl Entry {
 }
 
 pub struct Store {
-    keyspace: DashMap<Bytes, Entry>,
+    pub keyspace: DashMap<Bytes, Entry>,
 }
 
 impl Store {

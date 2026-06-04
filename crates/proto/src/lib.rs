@@ -33,6 +33,40 @@ pub enum RespValue {
     VerbatimString(String, Bytes),
 }
 
+impl RespValue {
+    pub fn error(s: impl Into<String>) -> Self {
+        RespValue::Error(s.into())
+    }
+
+    pub fn ok() -> Self {
+        RespValue::SimpleString("OK".into())
+    }
+
+    pub fn int(n: i64) -> Self {
+        RespValue::Integer(n)
+    }
+
+    pub fn bulk(b: Bytes) -> Self {
+        RespValue::BulkString(Some(b))
+    }
+
+    pub fn null_bulk() -> Self {
+        RespValue::BulkString(None)
+    }
+
+    pub fn array(items: Vec<RespValue>) -> Self {
+        RespValue::Array(Some(items))
+    }
+
+    pub fn empty_array() -> Self {
+        RespValue::Array(Some(Vec::new()))
+    }
+
+    pub fn nil_array() -> Self {
+        RespValue::Array(None)
+    }
+}
+
 pub struct RespEncoder;
 
 impl Encoder<RespValue> for RespEncoder {
