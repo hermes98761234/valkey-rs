@@ -11,7 +11,6 @@ pub mod list;
 pub mod hash;
 pub mod set;
 pub mod pubsub;
-pub mod stream;
 pub mod transaction;
 
 pub type Db = Arc<Store>;
@@ -134,20 +133,6 @@ pub async fn dispatch_ctx(cmd: Vec<Bytes>, store: Db, ctx: &CommandCtx) -> RespV
                 "ZSCAN" => zset::zscan(&store, args),
                 "ZRANDMEMBER" => zset::zrandmember(&store, args),
                 "ZRANGESTORE" => zset::zrangestore(&store, args),
-                "XADD" => stream::xadd(&store, args),
-                "XREAD" => stream::xread(&store, args),
-                "XRANGE" => stream::xrange(&store, args),
-                "XREVRANGE" => stream::xrevrange(&store, args),
-                "XLEN" => stream::xlen(&store, args),
-                "XTRIM" => stream::xtrim(&store, args),
-                "XDEL" => stream::xdel(&store, args),
-                "XINFO" => stream::xinfo(&store, args),
-                "XGROUP" => stream::xgroup(&store, args),
-                "XREADGROUP" => stream::xreadgroup(&store, args),
-                "XACK" => stream::xack(&store, args),
-                "XCLAIM" => stream::xclaim(&store, args),
-                "XPENDING" => stream::xpending(&store, args),
-                "XAUTOCLAIM" => stream::xautoclaim(&store, args),
                 _ => return RespValue::Error(format!("ERR unknown command `{}`", name).into()),
             };
             match r { Ok(v) => v, Err(e) => RespValue::Error(e) }

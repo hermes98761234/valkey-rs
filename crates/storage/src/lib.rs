@@ -259,7 +259,7 @@ pub struct Store {
     pub keyspace: DashMap<Bytes, Entry>,
     pub evicted_keys: AtomicU64,
     pub evict_config: RwLock<EvictionConfig>,
-    watchers: DashMap<Bytes, Vec<std::sync::mpsc::Sender<()>>>,
+    pub watchers: DashMap<Bytes, Vec<std::sync::mpsc::Sender<()>>>,
 }
 
 impl Store {
