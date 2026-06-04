@@ -49,7 +49,7 @@ impl ZSetData {
     pub fn is_empty(&self) -> bool { self.members.is_empty() }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct StreamId {
     pub ms: u64,
     pub seq: u64,
@@ -65,19 +65,89 @@ impl fmt::Display for StreamId {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Consumer group types
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone)]
+pub struct ConsumerGroup {
+    pub name: String,
+    pub last_delivered_id: StreamId,
+    pub pending: BTreeMap<StreamId, PendingEntry>,
+    pub consumers: HashMap<String, Consumer>,
+    pub entries_read: i64,
+}
+
+impl ConsumerGroup {
+    pub fn new(name: String, last_delivered_id: StreamId, entries_read: i64) -> Self {
+        Self { name, last_delivered_id, pending: BTreeMap::new(), consumers: HashMap::new(), entries_read }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct PendingEntry {
+    pub consumer: String,
+    pub delivered_at: Instant,
+    pub delivery_count: u64,
+}
+
+impl PendingEntry {
+    pub fn new(consumer: String) -> Self {
+        Self { consumer, delivered_at: Instant::now(), delivery_count: 1 }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Consumer {
+    pub name: String,
+    pub seen_time: Instant,
+    pub pending: BTreeMap<StreamId, PendingEntry>,
+}
+
+impl Consumer {
+    pub fn new(name: String) -> Self {
+        Self { name, seen_time: Instant::now(), pending: BTreeMap::new() }
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct StreamData {
     pub entries: BTreeMap<StreamId, Vec<(Bytes, Bytes)>>,
+    pub groups: HashMap<String, ConsumerGroup>,
+    pub last_id: StreamId,
+    pub deleted_ids: BTreeSet<StreamId>,
 }
 
 impl StreamData {
     pub fn new() -> Self { Self::default() }
 
     pub fn add(&mut self, id: StreamId, fields: Vec<(Bytes, Bytes)>) {
+        if id.ms > self.last_id.ms || (id.ms == self.last_id.ms && id.seq >= self.last_id.seq) {
+            self.last_id = StreamId::new(id.ms, id.seq + 1);
+        }
         self.entries.insert(id, fields);
     }
 
     pub fn len(&self) -> usize { self.entries.len() }
+
+    pub fn generate_id(&self, requested: Option<StreamId>) -> Result<StreamId, String> {
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64;
+        let id = match requested {
+            Some(id) => {
+                if id.ms == 0 && id.seq == 0 { return Err("ERR The ID specified in XADD must be greater than 0-0".into()); }
+                if id.ms < self.last_id.ms || (id.ms == self.last_id.ms && id.seq <= self.last_id.seq) {
+                    return Err("ERR The ID specified in XADD is equal or smaller than the target stream top item".into());
+                }
+                id
+            }
+            None => {
+                let seq = if now_ms == self.last_id.ms { self.last_id.seq } else { 0 };
+                StreamId::new(now_ms, seq)
+            }
+        };
+        Ok(id)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -189,6 +259,7 @@ pub struct Store {
     pub keyspace: DashMap<Bytes, Entry>,
     pub evicted_keys: AtomicU64,
     pub evict_config: RwLock<EvictionConfig>,
+    watchers: DashMap<Bytes, Vec<std::sync::mpsc::Sender<()>>>,
 }
 
 impl Store {
@@ -197,6 +268,7 @@ impl Store {
             keyspace: DashMap::new(),
             evicted_keys: AtomicU64::new(0),
             evict_config: RwLock::new(EvictionConfig::default()),
+            watchers: DashMap::new(),
         });
         let store_weak = Arc::downgrade(&store);
         tokio::spawn(async move {
@@ -228,22 +300,25 @@ impl Store {
     }
 
     pub fn set(&self, key: Bytes, data: DataType, ttl: Option<Duration>) {
+        self.notify_watchers(&key);
         let entry = Entry::new(data, ttl);
         self.keyspace.insert(key, entry);
     }
 
     pub fn del(&self, key: &Bytes) -> bool {
+        self.notify_watchers(key);
         self.keyspace.remove(key).is_some()
+    }
+
+    pub fn expire(&self, key: &Bytes, at: Instant) -> bool {
+        self.notify_watchers(key);
+        self.keyspace.get_mut(key).map(|mut e| { e.expires_at = Some(at); }).is_some()
     }
 
     pub fn exists(&self, key: &Bytes) -> bool {
         if let Some(entry) = self.keyspace.get(key) {
             if entry.is_expired() { drop(entry); self.keyspace.remove(key); false } else { true }
         } else { false }
-    }
-
-    pub fn expire(&self, key: &Bytes, at: Instant) -> bool {
-        self.keyspace.get_mut(key).map(|mut e| { e.expires_at = Some(at); }).is_some()
     }
 
     pub fn ttl(&self, key: &Bytes) -> Option<Duration> {
@@ -291,7 +366,29 @@ impl Store {
     }
 
     pub fn dbsize(&self) -> usize { self.keyspace.len() }
-    pub fn flush(&self) { self.keyspace.clear(); }
+    pub fn flush(&self) {
+        self.keyspace.clear();
+        self.watchers.clear();
+    }
+
+    /// Register a watcher for a key. Returns a receiver that will be notified
+    /// when the key is modified.
+    pub fn watch(&self, key: &Bytes) -> std::sync::mpsc::Receiver<()> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.watchers
+            .entry(key.clone())
+            .or_insert_with(Vec::new)
+            .push(tx);
+        rx
+    }
+
+    fn notify_watchers(&self, key: &Bytes) {
+        if let Some((_, senders)) = self.watchers.remove(key) {
+            for tx in senders {
+                let _ = tx.send(());
+            }
+        }
+    }
 
     pub fn memory_usage_bytes(&self) -> u64 {
         let mut total: u64 = 0;

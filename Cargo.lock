@@ -610,6 +610,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "valkey-proto",
+ "valkey-pubsub",
  "valkey-storage",
 ]
 
@@ -629,6 +630,12 @@ dependencies = [
 [[package]]
 name = "valkey-pubsub"
 version = "0.1.0"
+dependencies = [
+ "bytes",
+ "dashmap",
+ "tokio",
+ "valkey-proto",
+]
 
 [[package]]
 name = "valkey-replication"
@@ -661,6 +668,7 @@ dependencies = [
  "bytes",
  "crossbeam-skiplist",
  "dashmap",
+ "fastrand",
  "ordered-float",
  "thiserror",
  "tokio",
