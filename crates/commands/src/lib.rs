@@ -11,6 +11,8 @@ pub mod list;
 pub mod hash;
 pub mod set;
 pub mod pubsub;
+pub mod stream;
+pub mod transaction;
 
 pub type Db = Arc<Store>;
 
@@ -46,6 +48,23 @@ pub async fn dispatch_ctx(cmd: Vec<Bytes>, store: Db, ctx: &CommandCtx) -> RespV
         Err(_) => return RespValue::Error("ERR invalid command name".into()),
     };
     let args = &cmd[1..];
+
+    // Transaction commands are always handled, even inside MULTI
+    let is_transaction_cmd = matches!(
+        name.as_str(),
+        "MULTI" | "EXEC" | "DISCARD" | "WATCH" | "UNWATCH"
+    );
+
+    // If in MULTI mode and not a transaction command, queue it
+    if !is_transaction_cmd {
+        let is_multi = ctx.client.read().unwrap().multi;
+        if is_multi {
+            let mut client = ctx.client.write().unwrap();
+            client.queue.push(cmd);
+            return RespValue::SimpleString("QUEUED".into());
+        }
+    }
+
     match name.as_str() {
         "PING" | "ECHO" | "SELECT" | "DBSIZE" | "FLUSHDB" | "FLUSHALL"
         | "INFO" | "COMMAND" | "CONFIG" | "SAVE" | "BGSAVE" | "BGREWRITEAOF"
@@ -82,6 +101,10 @@ pub async fn dispatch_ctx(cmd: Vec<Bytes>, store: Db, ctx: &CommandCtx) -> RespV
             return RespValue::Error(
                 "ERR PubSub commands must be handled in pub/sub mode".into(),
             );
+        }
+        "MULTI" | "EXEC" | "DISCARD" | "WATCH" | "UNWATCH" => {
+            transaction::handle(&cmd, &store, ctx.client.clone()).await
+                .unwrap_or_else(|| RespValue::Error("ERR internal error".into()))
         }
         _ => {
             let r = match name.as_str() {
