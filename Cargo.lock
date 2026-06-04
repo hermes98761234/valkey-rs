@@ -605,6 +605,7 @@ dependencies = [
  "bytes",
  "dashmap",
  "fastrand",
+ "ordered-float",
  "rand",
  "thiserror",
  "tokio",
