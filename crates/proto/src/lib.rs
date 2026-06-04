@@ -116,18 +116,23 @@ fn encode_value(val: &RespValue, dst: &mut BytesMut) {
             dst.put_slice(n.to_string().as_bytes());
             dst.put_slice(b"\r\n");
         }
-        RespValue::BlobError(_, data) => {
+        RespValue::BlobError(type_desc, payload) => {
             dst.put_u8(b'!');
-            dst.put_slice(data.len().to_string().as_bytes());
+            let total_len = type_desc.len() + payload.len();
+            dst.put_slice(total_len.to_string().as_bytes());
             dst.put_slice(b"\r\n");
-            dst.put_slice(data);
+            dst.put_slice(type_desc);
+            dst.put_slice(payload);
             dst.put_slice(b"\r\n");
         }
-        RespValue::VerbatimString(_, data) => {
+        RespValue::VerbatimString(tag, content) => {
             dst.put_u8(b'=');
-            dst.put_slice(data.len().to_string().as_bytes());
+            let total_len = tag.len() + 1 + content.len();
+            dst.put_slice(total_len.to_string().as_bytes());
             dst.put_slice(b"\r\n");
-            dst.put_slice(data);
+            dst.put_slice(tag.as_bytes());
+            dst.put_slice(b":");
+            dst.put_slice(content);
             dst.put_slice(b"\r\n");
         }
     }
