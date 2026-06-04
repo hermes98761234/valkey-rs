@@ -970,7 +970,18 @@ async fn cmd_config_set(args: &[Bytes], config: Arc<RwLock<ServerConfig>>, store
     };
     let mut cfg = config.write().unwrap();
     match cfg.set(param, value) {
-        Ok(()) => RespValue::ok(),
+        Ok(()) => {
+            let maxmemory: u64 = cfg.get("maxmemory").first().map(|(_, v)| v.parse().unwrap_or(0)).unwrap_or(0);
+            let policy_str = cfg.get("maxmemory-policy").first().map(|(_, v)| v.clone()).unwrap_or_else(|| "noeviction".into());
+            let samples: u8 = cfg.get("maxmemory-samples").first().map(|(_, v)| v.parse().unwrap_or(5)).unwrap_or(5);
+            let policy = valkey_storage::EvictionPolicy::from_str(&policy_str).unwrap_or(valkey_storage::EvictionPolicy::Noeviction);
+            store.set_eviction_config(valkey_storage::EvictionConfig {
+                maxmemory,
+                policy,
+                maxmemory_samples: samples,
+            });
+            RespValue::ok()
+        }
         Err(e) => RespValue::error(e),
     }
 }
@@ -1096,11 +1107,14 @@ async fn cmd_memory(args: &[Bytes], store: &Arc<Store>) -> RespValue {
     };
     match sub.as_str() {
         "USAGE" => {
-            // Stub — return a small integer for any key
             if args.len() < 2 {
                 return RespValue::Error("ERR wrong number of arguments for 'memory|usage' command".into());
             }
-            RespValue::Integer(64)
+            let key = &args[1];
+            match store.key_memory_usage(key) {
+                Some(usage) => RespValue::Integer(usage as i64),
+                None => RespValue::Integer(0),
+            }
         }
         "DOCTOR" => RespValue::bulk(Bytes::from(
             "Hi Sam, I can't find any memory issue in your instance. I can only detect ...",

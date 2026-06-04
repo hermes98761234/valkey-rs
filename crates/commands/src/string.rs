@@ -85,6 +85,7 @@ async fn cmd_set(args: &[Bytes], store: &Arc<Store>) -> RespValue {
     }
     if xx && !key_exists { return null_bulk(); }
     let old_value = if get { store.get(&key).and_then(|e| match &e.data { DataType::String(s) => Some(s.clone()), _ => None }) } else { None };
+    if let Err(e) = store.maybe_evict() { return RespValue::Error(e); }
     store.set(key, DataType::String(value), ttl);
     if get { match old_value { Some(v) => bull(v), None => null_bulk() } } else { RespValue::SimpleString("OK".into()) }
 }
