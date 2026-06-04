@@ -79,8 +79,6 @@ pub async fn dispatch_ctx(cmd: Vec<Bytes>, store: Db, ctx: &CommandCtx) -> RespV
         }
         "SUBSCRIBE"|"UNSUBSCRIBE"|"PSUBSCRIBE"|"PUNSUBSCRIBE"
         |"PUBLISH"|"PUBSUB"|"SSUBSCRIBE"|"SUNSUBSCRIBE" => {
-            // PubSub commands need the hub - return error for now
-            // The actual pub/sub mode is handled at the connection level
             return RespValue::Error(
                 "ERR PubSub commands must be handled in pub/sub mode".into(),
             );

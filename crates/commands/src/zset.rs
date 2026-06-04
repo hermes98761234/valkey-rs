@@ -716,7 +716,11 @@ mod tests {
     use super::*;
 
     fn test_store() -> Db {
-        Arc::new(Store { keyspace: ::dashmap::DashMap::new() })
+        Arc::new(Store {
+            keyspace: ::dashmap::DashMap::new(),
+            evicted_keys: ::std::sync::atomic::AtomicU64::new(0),
+            evict_config: ::std::sync::RwLock::new(valkey_storage::EvictionConfig::default()),
+        })
     }
 
     fn db_with_zset(pairs: Vec<(&str, f64)>) -> Db {

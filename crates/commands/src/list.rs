@@ -36,7 +36,7 @@ fn pf(b:&Bytes)->Option<f64>{std::str::from_utf8(b).ok()?.parse::<f64>().ok()}
 mod tests{
     use super::*;
     fn b(s:&str)->Bytes{Bytes::from(s.to_string())}
-    fn ts()->Arc<Store>{Arc::new(Store{keyspace:dashmap::DashMap::new()})}
+    fn ts()->Arc<Store>{Store::new()}
     #[tokio::test]async fn t_lpush(){let s=ts();assert_eq!(handle(&[b("LPUSH"),b("L"),b("a"),b("b")],&s).await,RespValue::Integer(2));}
     #[tokio::test]async fn t_rpush(){let s=ts();assert_eq!(handle(&[b("RPUSH"),b("L"),b("a"),b("b")],&s).await,RespValue::Integer(2));}
     #[tokio::test]async fn t_lpop(){let s=ts();handle(&[b("RPUSH"),b("L"),b("x"),b("y")],&s).await;assert_eq!(handle(&[b("LPOP"),b("L")],&s).await,RespValue::BulkString(Some(b("x"))));}

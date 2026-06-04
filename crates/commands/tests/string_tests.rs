@@ -6,9 +6,7 @@ use valkey_proto::RespValue;
 use valkey_storage::{DataType, Entry, Store};
 
 fn test_store() -> Arc<Store> {
-    Arc::new(Store {
-        keyspace: dashmap::DashMap::new(),
-    })
+    Store::new()
 }
 
 #[test]
