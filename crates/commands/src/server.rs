@@ -1455,7 +1455,7 @@ async fn cmd_memory(args: &[Bytes], store: &Arc<Store>) -> RespValue {
             let key = &args[1];
             match store.key_memory_usage(key) {
                 Some(usage) => RespValue::Integer(usage as i64),
-                None => RespValue::Integer(0),
+                None => RespValue::BulkString(None),
             }
         }
         "DOCTOR" => RespValue::bulk(Bytes::from(
@@ -2069,7 +2069,7 @@ mod tests {
     async fn test_memory_usage() {
         let store = valkey_storage::Store::new();
         let r = cmd_memory(&[Bytes::from("USAGE"), Bytes::from("mykey")], &store).await;
-        assert_eq!(r, RespValue::Integer(64));
+        assert_eq!(r, RespValue::BulkString(None));
     }
 
     #[tokio::test]

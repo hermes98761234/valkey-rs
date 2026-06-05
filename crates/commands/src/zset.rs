@@ -1388,8 +1388,8 @@ mod tests {
         Bytes::from(s.to_string())
     }
 
-    #[test]
-    fn test_zadd_basic() {
+    #[tokio::test]
+    async fn test_zadd_basic() {
         let db = test_store();
         let args = vec![bs("myset"), bs("1.0"), bs("a"), bs("2.0"), bs("b")];
         let result = zadd(&db, &args).unwrap();
@@ -1397,8 +1397,8 @@ mod tests {
         assert_eq!(get_zset(&db, "myset").unwrap().len(), 2);
     }
 
-    #[test]
-    fn test_zadd_nx() {
+    #[tokio::test]
+    async fn test_zadd_nx() {
         let db = db_with_zset(vec![("a", 1.0)]);
         let args = vec![
             bs("myset"),
@@ -1430,8 +1430,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_zadd_xx() {
+    #[tokio::test]
+    async fn test_zadd_xx() {
         let db = db_with_zset(vec![("a", 1.0)]);
         let args = vec![
             bs("myset"),
@@ -1459,32 +1459,32 @@ mod tests {
             .is_none());
     }
 
-    #[test]
-    fn test_zadd_incr() {
+    #[tokio::test]
+    async fn test_zadd_incr() {
         let db = db_with_zset(vec![("a", 1.0)]);
         let args = vec![bs("myset"), bs("INCR"), bs("2.5"), bs("a")];
         let result = zadd(&db, &args).unwrap();
         assert_eq!(result, RespValue::BulkString(Some(bs("3.5"))));
     }
 
-    #[test]
-    fn test_zscore_existing() {
+    #[tokio::test]
+    async fn test_zscore_existing() {
         let db = db_with_zset(vec![("a", 1.5)]);
         let args = vec![bs("myset"), bs("a")];
         let result = zscore(&db, &args).unwrap();
         assert_eq!(result, RespValue::BulkString(Some(bs("1.5"))));
     }
 
-    #[test]
-    fn test_zscore_missing() {
+    #[tokio::test]
+    async fn test_zscore_missing() {
         let db = db_with_zset(vec![("a", 1.5)]);
         let args = vec![bs("myset"), bs("z")];
         let result = zscore(&db, &args).unwrap();
         assert_eq!(result, RespValue::BulkString(None));
     }
 
-    #[test]
-    fn test_zmscore() {
+    #[tokio::test]
+    async fn test_zmscore() {
         let db = db_with_zset(vec![("a", 1.0), ("b", 2.0)]);
         let args = vec![bs("myset"), bs("a"), bs("b"), bs("c")];
         let result = zmscore(&db, &args).unwrap();
@@ -1498,24 +1498,24 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_zrank() {
+    #[tokio::test]
+    async fn test_zrank() {
         let db = db_with_zset(vec![("a", 1.0), ("b", 2.0), ("c", 3.0)]);
         let args = vec![bs("myset"), bs("b")];
         let result = zrank(&db, &args).unwrap();
         assert_eq!(result, RespValue::Integer(1));
     }
 
-    #[test]
-    fn test_zrevrank() {
+    #[tokio::test]
+    async fn test_zrevrank() {
         let db = db_with_zset(vec![("a", 1.0), ("b", 2.0), ("c", 3.0)]);
         let args = vec![bs("myset"), bs("b")];
         let result = zrevrank(&db, &args).unwrap();
         assert_eq!(result, RespValue::Integer(1));
     }
 
-    #[test]
-    fn test_zrange_basic() {
+    #[tokio::test]
+    async fn test_zrange_basic() {
         let db = db_with_zset(vec![("a", 1.0), ("b", 2.0), ("c", 3.0)]);
         let args = vec![bs("myset"), bs("0"), bs("2")];
         let result = zrange(&db, &args).unwrap();
@@ -1529,8 +1529,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_zrange_withscores() {
+    #[tokio::test]
+    async fn test_zrange_withscores() {
         let db = db_with_zset(vec![("a", 1.0), ("b", 2.0)]);
         let args = vec![bs("myset"), bs("0"), bs("1"), bs("WITHSCORES")];
         let result = zrange(&db, &args).unwrap();
@@ -1545,8 +1545,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_zrange_negative() {
+    #[tokio::test]
+    async fn test_zrange_negative() {
         let db = db_with_zset(vec![("a", 1.0), ("b", 2.0), ("c", 3.0)]);
         let args = vec![bs("myset"), bs("-2"), bs("-1")];
         let result = zrange(&db, &args).unwrap();
@@ -1559,8 +1559,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_zrange_byscore() {
+    #[tokio::test]
+    async fn test_zrange_byscore() {
         let db = db_with_zset(vec![("a", 1.0), ("b", 2.0), ("c", 3.0)]);
         let args = vec![bs("myset"), bs("1"), bs("2"), bs("BYSCORE")];
         let result = zrange(&db, &args).unwrap();
@@ -1573,8 +1573,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_zrange_byscore_limit() {
+    #[tokio::test]
+    async fn test_zrange_byscore_limit() {
         let db = db_with_zset(vec![("a", 1.0), ("b", 2.0), ("c", 3.0), ("d", 4.0)]);
         let args = vec![
             bs("myset"),
@@ -1595,8 +1595,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_zrange_bylex() {
+    #[tokio::test]
+    async fn test_zrange_bylex() {
         let db = db_with_zset(vec![("a", 0.0), ("b", 0.0), ("c", 0.0)]);
         let args = vec![bs("myset"), bs("-"), bs("+"), bs("BYLEX")];
         let result = zrange(&db, &args).unwrap();
@@ -1610,8 +1610,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_zrevrange() {
+    #[tokio::test]
+    async fn test_zrevrange() {
         let db = db_with_zset(vec![("a", 1.0), ("b", 2.0), ("c", 3.0)]);
         let args = vec![bs("myset"), bs("0"), bs("2")];
         let result = zrevrange(&db, &args).unwrap();
@@ -1625,8 +1625,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_zrangebyscore() {
+    #[tokio::test]
+    async fn test_zrangebyscore() {
         let db = db_with_zset(vec![("a", 1.0), ("b", 2.0), ("c", 3.0), ("d", 4.0)]);
         let args = vec![bs("myset"), bs("2"), bs("3")];
         let result = zrangebyscore(&db, &args).unwrap();
@@ -1639,8 +1639,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_zrevrangebyscore() {
+    #[tokio::test]
+    async fn test_zrevrangebyscore() {
         let db = db_with_zset(vec![("a", 1.0), ("b", 2.0), ("c", 3.0)]);
         let args = vec![bs("myset"), bs("3"), bs("1")];
         let result = zrevrangebyscore(&db, &args).unwrap();
@@ -1654,24 +1654,24 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_zcount() {
+    #[tokio::test]
+    async fn test_zcount() {
         let db = db_with_zset(vec![("a", 1.0), ("b", 2.0), ("c", 3.0)]);
         let args = vec![bs("myset"), bs("1"), bs("2")];
         let result = zcount(&db, &args).unwrap();
         assert_eq!(result, RespValue::Integer(2));
     }
 
-    #[test]
-    fn test_zlexcount() {
+    #[tokio::test]
+    async fn test_zlexcount() {
         let db = db_with_zset(vec![("a", 0.0), ("b", 0.0), ("c", 0.0)]);
         let args = vec![bs("myset"), bs("-"), bs("+")];
         let result = zlexcount(&db, &args).unwrap();
         assert_eq!(result, RespValue::Integer(3));
     }
 
-    #[test]
-    fn test_zrem() {
+    #[tokio::test]
+    async fn test_zrem() {
         let db = db_with_zset(vec![("a", 1.0), ("b", 2.0), ("c", 3.0)]);
         let args = vec![bs("myset"), bs("a"), bs("c")];
         let result = zrem(&db, &args).unwrap();
@@ -1679,47 +1679,47 @@ mod tests {
         assert_eq!(get_zset(&db, "myset").unwrap().len(), 1);
     }
 
-    #[test]
-    fn test_zremrangebyrank() {
+    #[tokio::test]
+    async fn test_zremrangebyrank() {
         let db = db_with_zset(vec![("a", 1.0), ("b", 2.0), ("c", 3.0)]);
         let args = vec![bs("myset"), bs("0"), bs("1")];
         let result = zremrangebyrank(&db, &args).unwrap();
         assert_eq!(result, RespValue::Integer(2));
     }
 
-    #[test]
-    fn test_zremrangebyscore() {
+    #[tokio::test]
+    async fn test_zremrangebyscore() {
         let db = db_with_zset(vec![("a", 1.0), ("b", 2.0), ("c", 3.0)]);
         let args = vec![bs("myset"), bs("1"), bs("2")];
         let result = zremrangebyscore(&db, &args).unwrap();
         assert_eq!(result, RespValue::Integer(2));
     }
 
-    #[test]
-    fn test_zremrangebylex() {
+    #[tokio::test]
+    async fn test_zremrangebylex() {
         let db = db_with_zset(vec![("a", 0.0), ("b", 0.0), ("c", 0.0)]);
         let args = vec![bs("myset"), bs("-"), bs("[b")];
         let result = zremrangebylex(&db, &args).unwrap();
         assert_eq!(result, RespValue::Integer(2));
     }
 
-    #[test]
-    fn test_zcard() {
+    #[tokio::test]
+    async fn test_zcard() {
         let db = db_with_zset(vec![("a", 1.0), ("b", 2.0)]);
         let args = vec![bs("myset")];
         assert_eq!(zcard(&db, &args).unwrap(), RespValue::Integer(2));
     }
 
-    #[test]
-    fn test_zincrby() {
+    #[tokio::test]
+    async fn test_zincrby() {
         let db = db_with_zset(vec![("a", 1.0)]);
         let args = vec![bs("myset"), bs("2.5"), bs("a")];
         let result = zincrby(&db, &args).unwrap();
         assert_eq!(result, RespValue::BulkString(Some(bs("3.5"))));
     }
 
-    #[test]
-    fn test_zpopmin() {
+    #[tokio::test]
+    async fn test_zpopmin() {
         let db = db_with_zset(vec![("a", 1.0), ("b", 2.0), ("c", 3.0)]);
         let args = vec![bs("myset")];
         let result = zpopmin(&db, &args).unwrap();
@@ -1732,8 +1732,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_zpopmax() {
+    #[tokio::test]
+    async fn test_zpopmax() {
         let db = db_with_zset(vec![("a", 1.0), ("b", 2.0), ("c", 3.0)]);
         let args = vec![bs("myset")];
         let result = zpopmax(&db, &args).unwrap();
@@ -1746,8 +1746,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_zunionstore() {
+    #[tokio::test]
+    async fn test_zunionstore() {
         let db = test_store();
         {
             let mut z1 = ZSetData::new();
@@ -1768,8 +1768,8 @@ mod tests {
         assert_eq!(d.members.get(&bs("b")).unwrap().0, 5.0);
     }
 
-    #[test]
-    fn test_zinterstore() {
+    #[tokio::test]
+    async fn test_zinterstore() {
         let db = test_store();
         {
             let mut z1 = ZSetData::new();
@@ -1788,8 +1788,8 @@ mod tests {
         assert_eq!(result, RespValue::Integer(1));
     }
 
-    #[test]
-    fn test_zdiffstore() {
+    #[tokio::test]
+    async fn test_zdiffstore() {
         let db = test_store();
         {
             let mut z1 = ZSetData::new();
@@ -1808,8 +1808,8 @@ mod tests {
         assert_eq!(result, RespValue::Integer(2));
     }
 
-    #[test]
-    fn test_zscan() {
+    #[tokio::test]
+    async fn test_zscan() {
         let db = db_with_zset(vec![("a", 1.0), ("b", 2.0), ("c", 3.0)]);
         let args = vec![bs("myset"), bs("0"), bs("COUNT"), bs("2")];
         let result = zscan(&db, &args).unwrap();
@@ -1822,24 +1822,24 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_zrandmember() {
+    #[tokio::test]
+    async fn test_zrandmember() {
         let db = db_with_zset(vec![("a", 1.0), ("b", 2.0)]);
         let args = vec![bs("myset")];
         let result = zrandmember(&db, &args).unwrap();
         assert!(matches!(result, RespValue::BulkString(Some(_))));
     }
 
-    #[test]
-    fn test_zrangestore() {
+    #[tokio::test]
+    async fn test_zrangestore() {
         let db = db_with_zset(vec![("a", 1.0), ("b", 2.0), ("c", 3.0)]);
         let args = vec![bs("dest"), bs("myset"), bs("0"), bs("1")];
         let result = zrangestore(&db, &args).unwrap();
         assert_eq!(result, RespValue::Integer(2));
     }
 
-    #[test]
-    fn test_tie_breaking() {
+    #[tokio::test]
+    async fn test_tie_breaking() {
         let db = db_with_zset(vec![("c", 1.0), ("a", 1.0), ("b", 1.0)]);
         let args = vec![bs("myset"), bs("0"), bs("2")];
         let result = zrange(&db, &args).unwrap();
@@ -1853,8 +1853,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_zincrby_negative() {
+    #[tokio::test]
+    async fn test_zincrby_negative() {
         let db = db_with_zset(vec![("a", 5.0)]);
         let args = vec![bs("myset"), bs("-3"), bs("a")];
         let result = zincrby(&db, &args).unwrap();

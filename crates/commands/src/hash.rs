@@ -742,8 +742,8 @@ mod tests {
         Bytes::from(s.to_string())
     }
 
-    #[test]
-    fn hset_new_fields() {
+    #[tokio::test]
+    async fn hset_new_fields() {
         let s = st();
         assert_eq!(
             HSet::new(b("k"), vec![(b("f1"), b("v1")), (b("f2"), b("v2"))]).execute(&s),
@@ -751,15 +751,15 @@ mod tests {
         );
     }
 
-    #[test]
-    fn hset_overwrite() {
+    #[tokio::test]
+    async fn hset_overwrite() {
         let s = st();
         HSet::new(b("k"), vec![(b("f1"), b("v1"))]).execute(&s);
         assert_eq!(HSet::new(b("k"), vec![(b("f1"), b("x"))]).execute(&s), 0);
     }
 
-    #[test]
-    fn hset_mixed() {
+    #[tokio::test]
+    async fn hset_mixed() {
         let s = st();
         HSet::new(b("k"), vec![(b("f1"), b("v1"))]).execute(&s);
         assert_eq!(
@@ -768,38 +768,38 @@ mod tests {
         );
     }
 
-    #[test]
-    fn hget_existing() {
+    #[tokio::test]
+    async fn hget_existing() {
         let s = st();
         HSet::new(b("k"), vec![(b("f"), b("hello"))]).execute(&s);
         assert_eq!(HGet::new(b("k"), b("f")).execute(&s), Some(b("hello")));
     }
 
-    #[test]
-    fn hget_missing() {
+    #[tokio::test]
+    async fn hget_missing() {
         let s = st();
         HSet::new(b("k"), vec![(b("f"), b("v"))]).execute(&s);
         assert_eq!(HGet::new(b("k"), b("x")).execute(&s), None);
         assert_eq!(HGet::new(b("z"), b("f")).execute(&s), None);
     }
 
-    #[test]
-    fn hmget_mixed() {
+    #[tokio::test]
+    async fn hmget_mixed() {
         let s = st();
         HSet::new(b("k"), vec![(b("a"), b("1")), (b("b"), b("2"))]).execute(&s);
         let r = HMGet::new(b("k"), vec![b("a"), b("b"), b("c")]).execute(&s);
         assert_eq!(r, vec![Some(b("1")), Some(b("2")), None]);
     }
 
-    #[test]
-    fn hmget_missing_key() {
+    #[tokio::test]
+    async fn hmget_missing_key() {
         let s = st();
         let r = HMGet::new(b("z"), vec![b("a")]).execute(&s);
         assert_eq!(r, vec![None]);
     }
 
-    #[test]
-    fn hmset_ok() {
+    #[tokio::test]
+    async fn hmset_ok() {
         let s = st();
         assert_eq!(
             HMSet::new(b("k"), vec![(b("f1"), b("v1"))]).execute(&s),
@@ -808,22 +808,22 @@ mod tests {
         assert_eq!(HGet::new(b("k"), b("f1")).execute(&s), Some(b("v1")));
     }
 
-    #[test]
-    fn hgetall_pairs() {
+    #[tokio::test]
+    async fn hgetall_pairs() {
         let s = st();
         HSet::new(b("k"), vec![(b("a"), b("1")), (b("b"), b("2"))]).execute(&s);
         let r = HGetAll::new(b("k")).execute(&s);
         assert_eq!(r.len(), 4);
     }
 
-    #[test]
-    fn hgetall_empty() {
+    #[tokio::test]
+    async fn hgetall_empty() {
         let s = st();
         assert!(HGetAll::new(b("z")).execute(&s).is_empty());
     }
 
-    #[test]
-    fn hdel_existing() {
+    #[tokio::test]
+    async fn hdel_existing() {
         let s = st();
         HSet::new(
             b("k"),
@@ -835,39 +835,39 @@ mod tests {
         assert_eq!(HGet::new(b("k"), b("b")).execute(&s), Some(b("2")));
     }
 
-    #[test]
-    fn hdel_missing() {
+    #[tokio::test]
+    async fn hdel_missing() {
         let s = st();
         assert_eq!(HDel::new(b("z"), vec![b("a")]).execute(&s), 0);
         HSet::new(b("k"), vec![(b("a"), b("1"))]).execute(&s);
         assert_eq!(HDel::new(b("k"), vec![b("z")]).execute(&s), 0);
     }
 
-    #[test]
-    fn hexists_yes() {
+    #[tokio::test]
+    async fn hexists_yes() {
         let s = st();
         HSet::new(b("k"), vec![(b("a"), b("1"))]).execute(&s);
         assert_eq!(HExists::new(b("k"), b("a")).execute(&s), 1);
     }
 
-    #[test]
-    fn hexists_no() {
+    #[tokio::test]
+    async fn hexists_no() {
         let s = st();
         HSet::new(b("k"), vec![(b("a"), b("1"))]).execute(&s);
         assert_eq!(HExists::new(b("k"), b("b")).execute(&s), 0);
         assert_eq!(HExists::new(b("z"), b("a")).execute(&s), 0);
     }
 
-    #[test]
-    fn hlen_count() {
+    #[tokio::test]
+    async fn hlen_count() {
         let s = st();
         HSet::new(b("k"), vec![(b("a"), b("1")), (b("b"), b("2"))]).execute(&s);
         assert_eq!(HLen::new(b("k")).execute(&s), 2);
         assert_eq!(HLen::new(b("z")).execute(&s), 0);
     }
 
-    #[test]
-    fn hkeys_all() {
+    #[tokio::test]
+    async fn hkeys_all() {
         let s = st();
         HSet::new(b("k"), vec![(b("x"), b("1")), (b("y"), b("2"))]).execute(&s);
         let k = HKeys::new(b("k")).execute(&s);
@@ -877,8 +877,8 @@ mod tests {
         assert!(HKeys::new(b("z")).execute(&s).is_empty());
     }
 
-    #[test]
-    fn hvals_all() {
+    #[tokio::test]
+    async fn hvals_all() {
         let s = st();
         HSet::new(b("k"), vec![(b("x"), b("10")), (b("y"), b("20"))]).execute(&s);
         let v = HVals::new(b("k")).execute(&s);
@@ -888,58 +888,58 @@ mod tests {
         assert!(HVals::new(b("z")).execute(&s).is_empty());
     }
 
-    #[test]
-    fn hincrby_new() {
+    #[tokio::test]
+    async fn hincrby_new() {
         let s = st();
         assert_eq!(HIncrBy::new(b("k"), b("c"), 5).execute(&s), Ok(5));
     }
 
-    #[test]
-    fn hincrby_existing() {
+    #[tokio::test]
+    async fn hincrby_existing() {
         let s = st();
         HSet::new(b("k"), vec![(b("c"), b("10"))]).execute(&s);
         assert_eq!(HIncrBy::new(b("k"), b("c"), 3).execute(&s), Ok(13));
     }
 
-    #[test]
-    fn hincrby_negative() {
+    #[tokio::test]
+    async fn hincrby_negative() {
         let s = st();
         HSet::new(b("k"), vec![(b("c"), b("10"))]).execute(&s);
         assert_eq!(HIncrBy::new(b("k"), b("c"), -3).execute(&s), Ok(7));
     }
 
-    #[test]
-    fn hincrby_non_numeric() {
+    #[tokio::test]
+    async fn hincrby_non_numeric() {
         let s = st();
         HSet::new(b("k"), vec![(b("f"), b("abc"))]).execute(&s);
         assert_eq!(HIncrBy::new(b("k"), b("f"), 5).execute(&s), Ok(5));
     }
 
-    #[test]
-    fn hincrbyfloat_new() {
+    #[tokio::test]
+    async fn hincrbyfloat_new() {
         let s = st();
         let r = HIncrByFloat::new(b("k"), b("t"), 1.5).execute(&s).unwrap();
         assert_eq!(r.as_ref(), b"1.5");
     }
 
-    #[test]
-    fn hincrbyfloat_existing() {
+    #[tokio::test]
+    async fn hincrbyfloat_existing() {
         let s = st();
         HSet::new(b("k"), vec![(b("t"), b("2.5"))]).execute(&s);
         let r = HIncrByFloat::new(b("k"), b("t"), 1.0).execute(&s).unwrap();
         assert_eq!(r.as_ref(), b"3.5");
     }
 
-    #[test]
-    fn hincrbyfloat_negative() {
+    #[tokio::test]
+    async fn hincrbyfloat_negative() {
         let s = st();
         HSet::new(b("k"), vec![(b("t"), b("5.0"))]).execute(&s);
         let r = HIncrByFloat::new(b("k"), b("t"), -2.5).execute(&s).unwrap();
         assert_eq!(r.as_ref(), b"2.5");
     }
 
-    #[test]
-    fn hscan_full() {
+    #[tokio::test]
+    async fn hscan_full() {
         let s = st();
         HSet::new(
             b("k"),
@@ -964,16 +964,16 @@ mod tests {
         assert_eq!(all.len(), 8);
     }
 
-    #[test]
-    fn hscan_empty() {
+    #[tokio::test]
+    async fn hscan_empty() {
         let s = st();
         let (c, p) = HScan::new(b("z"), 0, None, 10).execute(&s);
         assert_eq!(c, 0);
         assert!(p.is_empty());
     }
 
-    #[test]
-    fn hscan_count() {
+    #[tokio::test]
+    async fn hscan_count() {
         let s = st();
         HSet::new(
             b("k"),
@@ -985,8 +985,8 @@ mod tests {
         assert!(next > 0);
     }
 
-    #[test]
-    fn hrandfield_positive() {
+    #[tokio::test]
+    async fn hrandfield_positive() {
         let s = st();
         HSet::new(
             b("k"),
@@ -1000,8 +1000,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn hrandfield_withvalues() {
+    #[tokio::test]
+    async fn hrandfield_withvalues() {
         let s = st();
         HSet::new(b("k"), vec![(b("x"), b("10"))]).execute(&s);
         let r = HRandField::new(b("k"), 1, true).execute(&s);
@@ -1010,22 +1010,22 @@ mod tests {
         assert_eq!(r[1].as_ref(), b"10");
     }
 
-    #[test]
-    fn hrandfield_negative() {
+    #[tokio::test]
+    async fn hrandfield_negative() {
         let s = st();
         HSet::new(b("k"), vec![(b("a"), b("1")), (b("b"), b("2"))]).execute(&s);
         let r = HRandField::new(b("k"), -5, false).execute(&s);
         assert_eq!(r.len(), 5);
     }
 
-    #[test]
-    fn hrandfield_empty() {
+    #[tokio::test]
+    async fn hrandfield_empty() {
         let s = st();
         assert!(HRandField::new(b("z"), 1, false).execute(&s).is_empty());
     }
 
-    #[test]
-    fn hrandfield_exceeds() {
+    #[tokio::test]
+    async fn hrandfield_exceeds() {
         let s = st();
         HSet::new(b("k"), vec![(b("a"), b("1")), (b("b"), b("2"))]).execute(&s);
         let r = HRandField::new(b("k"), 10, false).execute(&s);

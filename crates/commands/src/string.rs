@@ -572,10 +572,12 @@ async fn cmd_getdel(args: &[Bytes], store: &Arc<Store>) -> RespValue {
         Some(entry) => match &entry.data {
             DataType::String(s) => {
                 let val = s.clone();
+                drop(entry);
                 store.del(&key);
                 bull(val)
             }
             _ => {
+                drop(entry);
                 store.del(&key);
                 RespValue::Error(
                     "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
@@ -642,35 +644,27 @@ mod tests {
         Store::new()
     }
 
-    #[test]
-    fn get_missing() {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .build()
-            .unwrap();
+    #[tokio::test]
+    async fn get_missing() {
         let s = test_store();
-        let r = rt.block_on(handle(&[Bytes::from("GET"), Bytes::from("x")], &s));
+        let r = (handle(&[Bytes::from("GET"), Bytes::from("x")], &s)).await;
         assert_eq!(r, RespValue::BulkString(None));
     }
-    #[test]
-    fn set_get() {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .build()
-            .unwrap();
+    #[tokio::test]
+    async fn set_get() {
         let s = test_store();
-        rt.block_on(handle(
+        (handle(
             &[Bytes::from("SET"), Bytes::from("k"), Bytes::from("v")],
             &s,
-        ));
-        let r = rt.block_on(handle(&[Bytes::from("GET"), Bytes::from("k")], &s));
+        ))
+        .await;
+        let r = (handle(&[Bytes::from("GET"), Bytes::from("k")], &s)).await;
         assert_eq!(r, RespValue::BulkString(Some(Bytes::from("v"))));
     }
-    #[test]
-    fn set_nx() {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .build()
-            .unwrap();
+    #[tokio::test]
+    async fn set_nx() {
         let s = test_store();
-        let r = rt.block_on(handle(
+        let r = (handle(
             &[
                 Bytes::from("SET"),
                 Bytes::from("nx"),
@@ -678,9 +672,10 @@ mod tests {
                 Bytes::from("NX"),
             ],
             &s,
-        ));
+        ))
+        .await;
         assert_eq!(r, RespValue::SimpleString("OK".into()));
-        let r = rt.block_on(handle(
+        let r = (handle(
             &[
                 Bytes::from("SET"),
                 Bytes::from("nx"),
@@ -688,18 +683,16 @@ mod tests {
                 Bytes::from("NX"),
             ],
             &s,
-        ));
+        ))
+        .await;
         assert_eq!(r, RespValue::BulkString(None));
-        let r = rt.block_on(handle(&[Bytes::from("GET"), Bytes::from("nx")], &s));
+        let r = (handle(&[Bytes::from("GET"), Bytes::from("nx")], &s)).await;
         assert_eq!(r, RespValue::BulkString(Some(Bytes::from("v"))));
     }
-    #[test]
-    fn set_xx() {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .build()
-            .unwrap();
+    #[tokio::test]
+    async fn set_xx() {
         let s = test_store();
-        let r = rt.block_on(handle(
+        let r = (handle(
             &[
                 Bytes::from("SET"),
                 Bytes::from("xx"),
@@ -707,13 +700,15 @@ mod tests {
                 Bytes::from("XX"),
             ],
             &s,
-        ));
+        ))
+        .await;
         assert_eq!(r, RespValue::BulkString(None));
-        rt.block_on(handle(
+        (handle(
             &[Bytes::from("SET"), Bytes::from("xx"), Bytes::from("o")],
             &s,
-        ));
-        let r = rt.block_on(handle(
+        ))
+        .await;
+        let r = (handle(
             &[
                 Bytes::from("SET"),
                 Bytes::from("xx"),
@@ -721,61 +716,58 @@ mod tests {
                 Bytes::from("XX"),
             ],
             &s,
-        ));
+        ))
+        .await;
         assert_eq!(r, RespValue::SimpleString("OK".into()));
-        let r = rt.block_on(handle(&[Bytes::from("GET"), Bytes::from("xx")], &s));
+        let r = (handle(&[Bytes::from("GET"), Bytes::from("xx")], &s)).await;
         assert_eq!(r, RespValue::BulkString(Some(Bytes::from("u"))));
     }
-    #[test]
-    fn del() {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .build()
-            .unwrap();
+    #[tokio::test]
+    async fn del() {
         let s = test_store();
-        rt.block_on(handle(
+        (handle(
             &[Bytes::from("SET"), Bytes::from("d"), Bytes::from("1")],
             &s,
-        ));
-        let r = rt.block_on(handle(&[Bytes::from("DEL"), Bytes::from("d")], &s));
+        ))
+        .await;
+        let r = (handle(&[Bytes::from("DEL"), Bytes::from("d")], &s)).await;
         assert_eq!(r, RespValue::Integer(1));
-        let r = rt.block_on(handle(&[Bytes::from("DEL"), Bytes::from("d")], &s));
+        let r = (handle(&[Bytes::from("DEL"), Bytes::from("d")], &s)).await;
         assert_eq!(r, RespValue::Integer(0));
     }
-    #[test]
-    fn getset() {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .build()
-            .unwrap();
+    #[tokio::test]
+    async fn getset() {
         let s = test_store();
-        let r = rt.block_on(handle(
+        let r = (handle(
             &[Bytes::from("GETSET"), Bytes::from("gs"), Bytes::from("new")],
             &s,
-        ));
+        ))
+        .await;
         assert_eq!(r, RespValue::BulkString(None));
-        let r = rt.block_on(handle(
+        let r = (handle(
             &[
                 Bytes::from("GETSET"),
                 Bytes::from("gs"),
                 Bytes::from("newer"),
             ],
             &s,
-        ));
+        ))
+        .await;
         assert_eq!(r, RespValue::BulkString(Some(Bytes::from("new"))));
     }
-    #[test]
-    fn mget() {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .build()
-            .unwrap();
+    #[tokio::test]
+    async fn mget() {
         let s = test_store();
-        rt.block_on(handle(
+        (handle(
             &[Bytes::from("SET"), Bytes::from("a"), Bytes::from("1")],
             &s,
-        ));
-        let r = rt.block_on(handle(
+        ))
+        .await;
+        let r = (handle(
             &[Bytes::from("MGET"), Bytes::from("a"), Bytes::from("b")],
             &s,
-        ));
+        ))
+        .await;
         match r {
             RespValue::Array(Some(a)) => {
                 assert_eq!(a[0], RespValue::BulkString(Some(Bytes::from("1"))));
@@ -784,13 +776,10 @@ mod tests {
             _ => panic!("expected array"),
         }
     }
-    #[test]
-    fn mset() {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .build()
-            .unwrap();
+    #[tokio::test]
+    async fn mset() {
         let s = test_store();
-        let r = rt.block_on(handle(
+        let r = (handle(
             &[
                 Bytes::from("MSET"),
                 Bytes::from("a"),
@@ -799,18 +788,16 @@ mod tests {
                 Bytes::from("2"),
             ],
             &s,
-        ));
+        ))
+        .await;
         assert_eq!(r, RespValue::SimpleString("OK".into()));
-        let r = rt.block_on(handle(&[Bytes::from("GET"), Bytes::from("a")], &s));
+        let r = (handle(&[Bytes::from("GET"), Bytes::from("a")], &s)).await;
         assert_eq!(r, RespValue::BulkString(Some(Bytes::from("1"))));
     }
-    #[test]
-    fn msetnx() {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .build()
-            .unwrap();
+    #[tokio::test]
+    async fn msetnx() {
         let s = test_store();
-        let r = rt.block_on(handle(
+        let r = (handle(
             &[
                 Bytes::from("MSETNX"),
                 Bytes::from("a"),
@@ -819,9 +806,10 @@ mod tests {
                 Bytes::from("2"),
             ],
             &s,
-        ));
+        ))
+        .await;
         assert_eq!(r, RespValue::Integer(1));
-        let r = rt.block_on(handle(
+        let r = (handle(
             &[
                 Bytes::from("MSETNX"),
                 Bytes::from("a"),
@@ -830,130 +818,115 @@ mod tests {
                 Bytes::from("4"),
             ],
             &s,
-        ));
+        ))
+        .await;
         assert_eq!(r, RespValue::Integer(0));
     }
-    #[test]
-    fn incr() {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .build()
-            .unwrap();
+    #[tokio::test]
+    async fn incr() {
         let s = test_store();
-        let r = rt.block_on(handle(&[Bytes::from("INCR"), Bytes::from("c")], &s));
+        let r = (handle(&[Bytes::from("INCR"), Bytes::from("c")], &s)).await;
         assert_eq!(r, RespValue::Integer(1));
-        let r = rt.block_on(handle(&[Bytes::from("INCR"), Bytes::from("c")], &s));
+        let r = (handle(&[Bytes::from("INCR"), Bytes::from("c")], &s)).await;
         assert_eq!(r, RespValue::Integer(2));
     }
-    #[test]
-    fn decr() {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .build()
-            .unwrap();
+    #[tokio::test]
+    async fn decr() {
         let s = test_store();
-        let r = rt.block_on(handle(&[Bytes::from("DECR"), Bytes::from("c")], &s));
+        let r = (handle(&[Bytes::from("DECR"), Bytes::from("c")], &s)).await;
         assert_eq!(r, RespValue::Integer(-1));
     }
-    #[test]
-    fn incrby() {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .build()
-            .unwrap();
+    #[tokio::test]
+    async fn incrby() {
         let s = test_store();
-        let r = rt.block_on(handle(
+        let r = (handle(
             &[Bytes::from("INCRBY"), Bytes::from("c"), Bytes::from("10")],
             &s,
-        ));
+        ))
+        .await;
         assert_eq!(r, RespValue::Integer(10));
     }
-    #[test]
-    fn decrby() {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .build()
-            .unwrap();
+    #[tokio::test]
+    async fn decrby() {
         let s = test_store();
-        let r = rt.block_on(handle(
+        let r = (handle(
             &[Bytes::from("DECRBY"), Bytes::from("c"), Bytes::from("3")],
             &s,
-        ));
+        ))
+        .await;
         assert_eq!(r, RespValue::Integer(-3));
     }
-    #[test]
-    fn incrbyfloat() {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .build()
-            .unwrap();
+    #[tokio::test]
+    async fn incrbyfloat() {
         let s = test_store();
-        rt.block_on(handle(
+        (handle(
             &[Bytes::from("SET"), Bytes::from("f"), Bytes::from("10.5")],
             &s,
-        ));
-        let r = rt.block_on(handle(
+        ))
+        .await;
+        let r = (handle(
             &[
                 Bytes::from("INCRBYFLOAT"),
                 Bytes::from("f"),
                 Bytes::from("0.1"),
             ],
             &s,
-        ));
+        ))
+        .await;
         assert_eq!(r, RespValue::BulkString(Some(Bytes::from("10.6"))));
     }
-    #[test]
-    fn append() {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .build()
-            .unwrap();
+    #[tokio::test]
+    async fn append() {
         let s = test_store();
-        let r = rt.block_on(handle(
+        let r = (handle(
             &[
                 Bytes::from("APPEND"),
                 Bytes::from("ap"),
                 Bytes::from("Hello"),
             ],
             &s,
-        ));
+        ))
+        .await;
         assert_eq!(r, RespValue::Integer(5));
-        let r = rt.block_on(handle(
+        let r = (handle(
             &[
                 Bytes::from("APPEND"),
                 Bytes::from("ap"),
                 Bytes::from(" World"),
             ],
             &s,
-        ));
+        ))
+        .await;
         assert_eq!(r, RespValue::Integer(11));
-        let r = rt.block_on(handle(&[Bytes::from("GET"), Bytes::from("ap")], &s));
+        let r = (handle(&[Bytes::from("GET"), Bytes::from("ap")], &s)).await;
         assert_eq!(r, RespValue::BulkString(Some(Bytes::from("Hello World"))));
     }
-    #[test]
-    fn strlen() {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .build()
-            .unwrap();
+    #[tokio::test]
+    async fn strlen() {
         let s = test_store();
-        rt.block_on(handle(
+        (handle(
             &[Bytes::from("SET"), Bytes::from("s"), Bytes::from("hello")],
             &s,
-        ));
-        let r = rt.block_on(handle(&[Bytes::from("STRLEN"), Bytes::from("s")], &s));
+        ))
+        .await;
+        let r = (handle(&[Bytes::from("STRLEN"), Bytes::from("s")], &s)).await;
         assert_eq!(r, RespValue::Integer(5));
-        let r = rt.block_on(handle(&[Bytes::from("STRLEN"), Bytes::from("no")], &s));
+        let r = (handle(&[Bytes::from("STRLEN"), Bytes::from("no")], &s)).await;
         assert_eq!(r, RespValue::Integer(0));
     }
-    #[test]
-    fn getrange() {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .build()
-            .unwrap();
+    #[tokio::test]
+    async fn getrange() {
         let s = test_store();
-        rt.block_on(handle(
+        (handle(
             &[
                 Bytes::from("SET"),
                 Bytes::from("g"),
                 Bytes::from("Hello World"),
             ],
             &s,
-        ));
-        let r = rt.block_on(handle(
+        ))
+        .await;
+        let r = (handle(
             &[
                 Bytes::from("GETRANGE"),
                 Bytes::from("g"),
@@ -961,9 +934,10 @@ mod tests {
                 Bytes::from("4"),
             ],
             &s,
-        ));
+        ))
+        .await;
         assert_eq!(r, RespValue::BulkString(Some(Bytes::from("Hello"))));
-        let r = rt.block_on(handle(
+        let r = (handle(
             &[
                 Bytes::from("GETRANGE"),
                 Bytes::from("g"),
@@ -971,24 +945,23 @@ mod tests {
                 Bytes::from("-1"),
             ],
             &s,
-        ));
+        ))
+        .await;
         assert_eq!(r, RespValue::BulkString(Some(Bytes::from("World"))));
     }
-    #[test]
-    fn setrange() {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .build()
-            .unwrap();
+    #[tokio::test]
+    async fn setrange() {
         let s = test_store();
-        rt.block_on(handle(
+        (handle(
             &[
                 Bytes::from("SET"),
                 Bytes::from("sr"),
                 Bytes::from("Hello World"),
             ],
             &s,
-        ));
-        let r = rt.block_on(handle(
+        ))
+        .await;
+        let r = (handle(
             &[
                 Bytes::from("SETRANGE"),
                 Bytes::from("sr"),
@@ -996,36 +969,32 @@ mod tests {
                 Bytes::from("Redis"),
             ],
             &s,
-        ));
+        ))
+        .await;
         assert_eq!(r, RespValue::Integer(11));
-        let r = rt.block_on(handle(&[Bytes::from("GET"), Bytes::from("sr")], &s));
+        let r = (handle(&[Bytes::from("GET"), Bytes::from("sr")], &s)).await;
         assert_eq!(r, RespValue::BulkString(Some(Bytes::from("Hello Redis"))));
     }
-    #[test]
-    fn setnx() {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .build()
-            .unwrap();
+    #[tokio::test]
+    async fn setnx() {
         let s = test_store();
-        let r = rt.block_on(handle(
+        let r = (handle(
             &[Bytes::from("SETNX"), Bytes::from("sn"), Bytes::from("v")],
             &s,
-        ));
+        ))
+        .await;
         assert_eq!(r, RespValue::Integer(1));
-        let r = rt.block_on(handle(
+        let r = (handle(
             &[Bytes::from("SETNX"), Bytes::from("sn"), Bytes::from("v2")],
             &s,
-        ));
+        ))
+        .await;
         assert_eq!(r, RespValue::Integer(0));
     }
-    #[test]
-    fn setex() {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_time()
-            .build()
-            .unwrap();
+    #[tokio::test]
+    async fn setex() {
         let s = test_store();
-        let r = rt.block_on(handle(
+        let r = (handle(
             &[
                 Bytes::from("SETEX"),
                 Bytes::from("sx"),
@@ -1033,19 +1002,16 @@ mod tests {
                 Bytes::from("v"),
             ],
             &s,
-        ));
+        ))
+        .await;
         assert_eq!(r, RespValue::SimpleString("OK".into()));
-        let r = rt.block_on(handle(&[Bytes::from("GET"), Bytes::from("sx")], &s));
+        let r = (handle(&[Bytes::from("GET"), Bytes::from("sx")], &s)).await;
         assert_eq!(r, RespValue::BulkString(Some(Bytes::from("v"))));
     }
-    #[test]
-    fn psetex() {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_time()
-            .build()
-            .unwrap();
+    #[tokio::test]
+    async fn psetex() {
         let s = test_store();
-        let r = rt.block_on(handle(
+        let r = (handle(
             &[
                 Bytes::from("PSETEX"),
                 Bytes::from("px"),
@@ -1053,55 +1019,46 @@ mod tests {
                 Bytes::from("v"),
             ],
             &s,
-        ));
+        ))
+        .await;
         assert_eq!(r, RespValue::SimpleString("OK".into()));
-        let r = rt.block_on(handle(&[Bytes::from("GET"), Bytes::from("px")], &s));
+        let r = (handle(&[Bytes::from("GET"), Bytes::from("px")], &s)).await;
         assert_eq!(r, RespValue::BulkString(Some(Bytes::from("v"))));
     }
-    #[test]
-    fn getex() {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_time()
-            .build()
-            .unwrap();
+    #[tokio::test]
+    async fn getex() {
         let s = test_store();
-        rt.block_on(handle(
+        (handle(
             &[Bytes::from("SET"), Bytes::from("ge"), Bytes::from("v")],
             &s,
-        ));
-        let r = rt.block_on(handle(&[Bytes::from("GETEX"), Bytes::from("ge")], &s));
+        ))
+        .await;
+        let r = (handle(&[Bytes::from("GETEX"), Bytes::from("ge")], &s)).await;
         assert_eq!(r, RespValue::BulkString(Some(Bytes::from("v"))));
     }
-    #[test]
-    fn getdel() {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .build()
-            .unwrap();
+    #[tokio::test]
+    async fn getdel() {
         let s = test_store();
-        rt.block_on(handle(
+        (handle(
             &[Bytes::from("SET"), Bytes::from("gd"), Bytes::from("v")],
             &s,
-        ));
-        let r = rt.block_on(handle(&[Bytes::from("GETDEL"), Bytes::from("gd")], &s));
+        ))
+        .await;
+        let r = (handle(&[Bytes::from("GETDEL"), Bytes::from("gd")], &s)).await;
         assert_eq!(r, RespValue::BulkString(Some(Bytes::from("v"))));
-        let r = rt.block_on(handle(&[Bytes::from("GET"), Bytes::from("gd")], &s));
+        let r = (handle(&[Bytes::from("GET"), Bytes::from("gd")], &s)).await;
         assert_eq!(r, RespValue::BulkString(None));
     }
-    #[test]
-    fn dispatch_set_get() {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .build()
-            .unwrap();
+    #[tokio::test]
+    async fn dispatch_set_get() {
         let s = test_store();
-        let r = rt.block_on(crate::dispatch(
+        let r = (crate::dispatch(
             vec![Bytes::from("SET"), Bytes::from("dk"), Bytes::from("dv")],
             s.clone(),
-        ));
+        ))
+        .await;
         assert_eq!(r, RespValue::SimpleString("OK".into()));
-        let r = rt.block_on(crate::dispatch(
-            vec![Bytes::from("GET"), Bytes::from("dk")],
-            s,
-        ));
+        let r = (crate::dispatch(vec![Bytes::from("GET"), Bytes::from("dk")], s)).await;
         assert_eq!(r, RespValue::BulkString(Some(Bytes::from("dv"))));
     }
 }

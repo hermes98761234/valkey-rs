@@ -354,18 +354,20 @@ impl Store {
             watchers: DashMap::new(),
             dirty_count: AtomicU64::new(0),
         });
-        let store_weak = Arc::downgrade(&store);
-        tokio::spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_millis(100));
-            loop {
-                interval.tick().await;
-                if let Some(store) = store_weak.upgrade() {
-                    store.evict_expired();
-                } else {
-                    break;
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            let store_weak = Arc::downgrade(&store);
+            handle.spawn(async move {
+                let mut interval = tokio::time::interval(Duration::from_millis(100));
+                loop {
+                    interval.tick().await;
+                    if let Some(store) = store_weak.upgrade() {
+                        store.evict_expired();
+                    } else {
+                        break;
+                    }
                 }
-            }
-        });
+            });
+        }
         store
     }
 

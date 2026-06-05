@@ -71,7 +71,9 @@ async fn cmd_rename(args: &[Bytes], store: &Arc<Store>) -> RespValue {
                     Duration::ZERO
                 }
             });
-            (e.data.clone(), ttl_dur)
+            let result = (e.data.clone(), ttl_dur);
+            drop(e);
+            result
         }
         None => return RespValue::Error("ERR no such key".into()),
     };
@@ -98,7 +100,9 @@ async fn cmd_renamenx(args: &[Bytes], store: &Arc<Store>) -> RespValue {
                     Duration::ZERO
                 }
             });
-            store.set(newkey.clone(), e.data.clone(), ttl);
+            let data = e.data.clone();
+            drop(e);
+            store.set(newkey.clone(), data, ttl);
             store.del(key);
             RespValue::Integer(1)
         }

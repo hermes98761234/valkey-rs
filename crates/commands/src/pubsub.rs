@@ -224,16 +224,16 @@ mod tests {
         PubSubCtx::new(hub)
     }
 
-    #[test]
-    fn test_publish_no_subscribers() {
+    #[tokio::test]
+    async fn test_publish_no_subscribers() {
         let hub = test_hub();
         let ctx = test_ctx(hub);
         let r = cmd_publish(&[Bytes::from("ch1"), Bytes::from("msg")], &ctx);
         assert_eq!(r, RespValue::int(0));
     }
 
-    #[test]
-    fn test_publish_with_subscriber() {
+    #[tokio::test]
+    async fn test_publish_with_subscriber() {
         let hub = test_hub();
         let mut rx = hub.subscribe(Bytes::from("ch1"));
         let ctx = test_ctx(hub);
@@ -243,8 +243,8 @@ mod tests {
         assert_eq!(msg, Bytes::from("hello"));
     }
 
-    #[test]
-    fn test_publish_with_pattern_subscriber() {
+    #[tokio::test]
+    async fn test_publish_with_pattern_subscriber() {
         let hub = test_hub();
         let mut rx = hub.psubscribe(Bytes::from("chan*"));
         let ctx = test_ctx(hub);
@@ -255,8 +255,8 @@ mod tests {
         assert_eq!(msg, Bytes::from("data"));
     }
 
-    #[test]
-    fn test_subscribe_args() {
+    #[tokio::test]
+    async fn test_subscribe_args() {
         let hub = test_hub();
         let ctx = test_ctx(hub);
         let r = cmd_subscribe(&[Bytes::from("ch1")], &ctx);
@@ -270,8 +270,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_subscribe_no_args() {
+    #[tokio::test]
+    async fn test_subscribe_no_args() {
         let hub = test_hub();
         let ctx = test_ctx(hub);
         let r = cmd_subscribe(&[], &ctx);
@@ -281,8 +281,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_unsubscribe() {
+    #[tokio::test]
+    async fn test_unsubscribe() {
         let hub = test_hub();
         let ctx = test_ctx(hub);
         let r = cmd_unsubscribe(&[Bytes::from("ch1")], &ctx);
@@ -294,8 +294,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_psubscribe() {
+    #[tokio::test]
+    async fn test_psubscribe() {
         let hub = test_hub();
         let ctx = test_ctx(hub);
         let r = cmd_psubscribe(&[Bytes::from("chan*")], &ctx);
@@ -307,8 +307,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_punsubscribe() {
+    #[tokio::test]
+    async fn test_punsubscribe() {
         let hub = test_hub();
         let ctx = test_ctx(hub);
         let r = cmd_punsubscribe(&[Bytes::from("chan*")], &ctx);
@@ -320,8 +320,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_pubsub_channels() {
+    #[tokio::test]
+    async fn test_pubsub_channels() {
         let hub = test_hub();
         let _rx1 = hub.subscribe(Bytes::from("ch1"));
         let _rx2 = hub.subscribe(Bytes::from("ch2"));
@@ -335,8 +335,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_pubsub_channels_with_pattern() {
+    #[tokio::test]
+    async fn test_pubsub_channels_with_pattern() {
         let hub = test_hub();
         let _rx1 = hub.subscribe(Bytes::from("ch1"));
         let _rx2 = hub.subscribe(Bytes::from("other"));
@@ -350,8 +350,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_pubsub_numsub() {
+    #[tokio::test]
+    async fn test_pubsub_numsub() {
         let hub = test_hub();
         let _rx = hub.subscribe(Bytes::from("ch1"));
         let ctx = test_ctx(hub);
@@ -366,32 +366,32 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_pubsub_numpat() {
+    #[tokio::test]
+    async fn test_pubsub_numpat() {
         let hub = test_hub();
         assert_eq!(hub.numpat(), 0);
         let _rx = hub.psubscribe(Bytes::from("chan*"));
         assert_eq!(hub.numpat(), 1);
     }
 
-    #[test]
-    fn test_pubsub_shardchannels() {
+    #[tokio::test]
+    async fn test_pubsub_shardchannels() {
         let hub = test_hub();
         let ctx = test_ctx(hub);
         let r = cmd_pubsub_shardchannels(&[], &ctx);
         assert_eq!(r, RespValue::array(vec![]));
     }
 
-    #[test]
-    fn test_pubsub_shardnumsub() {
+    #[tokio::test]
+    async fn test_pubsub_shardnumsub() {
         let hub = test_hub();
         let ctx = test_ctx(hub);
         let r = cmd_pubsub_shardnumsub(&[], &ctx);
         assert_eq!(r, RespValue::array(vec![]));
     }
 
-    #[test]
-    fn test_publish_wrong_args() {
+    #[tokio::test]
+    async fn test_publish_wrong_args() {
         let hub = test_hub();
         let ctx = test_ctx(hub);
         let r = cmd_publish(&[Bytes::from("ch1")], &ctx);
@@ -401,8 +401,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_pubsub_unknown_subcommand() {
+    #[tokio::test]
+    async fn test_pubsub_unknown_subcommand() {
         let hub = test_hub();
         let ctx = test_ctx(hub);
         let r = cmd_pubsub(&[Bytes::from("INVALID")], &ctx);

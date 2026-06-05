@@ -765,54 +765,54 @@ mod tests {
     }
 
     // --- SADD ---
-    #[test]
-    fn test_sadd_new_key() {
+    #[tokio::test]
+    async fn test_sadd_new_key() {
         let store = test_store();
         let result = sadd(&store, &[b("myset"), b("a"), b("b"), b("c")]);
         assert_eq!(result, RespValue::Integer(3));
     }
 
-    #[test]
-    fn test_sadd_existing_members() {
+    #[tokio::test]
+    async fn test_sadd_existing_members() {
         let store = test_store();
         sadd(&store, &[b("myset"), b("a"), b("b")]);
         let result = sadd(&store, &[b("myset"), b("a"), b("b")]);
         assert_eq!(result, RespValue::Integer(0));
     }
 
-    #[test]
-    fn test_sadd_partial_new() {
+    #[tokio::test]
+    async fn test_sadd_partial_new() {
         let store = test_store();
         sadd(&store, &[b("myset"), b("a")]);
         let result = sadd(&store, &[b("myset"), b("a"), b("b")]);
         assert_eq!(result, RespValue::Integer(1));
     }
 
-    #[test]
-    fn test_sadd_wrong_type() {
+    #[tokio::test]
+    async fn test_sadd_wrong_type() {
         let store = test_store();
         store.set(b("mykey"), DataType::String(b("hello")), None);
         let result = sadd(&store, &[b("mykey"), b("a")]);
         assert!(matches!(result, RespValue::Error(_)));
     }
 
-    #[test]
-    fn test_sadd_syntax_error() {
+    #[tokio::test]
+    async fn test_sadd_syntax_error() {
         let store = test_store();
         let result = sadd(&store, &[b("myset")]);
         assert!(matches!(result, RespValue::Error(_)));
     }
 
     // --- SMEMBERS ---
-    #[test]
-    fn test_smembers_empty() {
+    #[tokio::test]
+    async fn test_smembers_empty() {
         let store = test_store();
         let result = smembers(&store, &[b("myset")]);
         assert_eq!(result, RespValue::Array(Some(vec![])));
     }
 
-    #[test]
-    fn test_smembers_with_data() {
+    #[tokio::test]
+    async fn test_smembers_with_data() {
         let store = test_store();
         sadd(&store, &[b("myset"), b("a"), b("b"), b("c")]);
         let result = smembers(&store, &[b("myset")]);
@@ -823,8 +823,8 @@ mod tests {
         assert_eq!(arr.len(), 3);
     }
 
-    #[test]
-    fn test_smembers_wrong_type() {
+    #[tokio::test]
+    async fn test_smembers_wrong_type() {
         let store = test_store();
         store.set(b("mykey"), DataType::String(b("hello")), None);
         let result = smembers(&store, &[b("mykey")]);
@@ -832,31 +832,31 @@ mod tests {
     }
 
     // --- SISMEMBER ---
-    #[test]
-    fn test_sismember_exists() {
+    #[tokio::test]
+    async fn test_sismember_exists() {
         let store = test_store();
         sadd(&store, &[b("myset"), b("a")]);
         let result = sismember(&store, &[b("myset"), b("a")]);
         assert_eq!(result, RespValue::Integer(1));
     }
 
-    #[test]
-    fn test_sismember_not_exists() {
+    #[tokio::test]
+    async fn test_sismember_not_exists() {
         let store = test_store();
         sadd(&store, &[b("myset"), b("a")]);
         let result = sismember(&store, &[b("myset"), b("b")]);
         assert_eq!(result, RespValue::Integer(0));
     }
 
-    #[test]
-    fn test_sismember_missing_key() {
+    #[tokio::test]
+    async fn test_sismember_missing_key() {
         let store = test_store();
         let result = sismember(&store, &[b("myset"), b("a")]);
         assert_eq!(result, RespValue::Integer(0));
     }
 
-    #[test]
-    fn test_sismember_wrong_type() {
+    #[tokio::test]
+    async fn test_sismember_wrong_type() {
         let store = test_store();
         store.set(b("mykey"), DataType::String(b("hello")), None);
         let result = sismember(&store, &[b("mykey"), b("a")]);
@@ -864,8 +864,8 @@ mod tests {
     }
 
     // --- SMISMEMBER ---
-    #[test]
-    fn test_smismember_mixed() {
+    #[tokio::test]
+    async fn test_smismember_mixed() {
         let store = test_store();
         sadd(&store, &[b("myset"), b("a"), b("c")]);
         let result = smismember(&store, &[b("myset"), b("a"), b("b"), b("c")]);
@@ -879,8 +879,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_smismember_missing_key() {
+    #[tokio::test]
+    async fn test_smismember_missing_key() {
         let store = test_store();
         let result = smismember(&store, &[b("myset"), b("a"), b("b")]);
         assert_eq!(
@@ -890,23 +890,23 @@ mod tests {
     }
 
     // --- SCARD ---
-    #[test]
-    fn test_scard_empty() {
+    #[tokio::test]
+    async fn test_scard_empty() {
         let store = test_store();
         let result = scard(&store, &[b("myset")]);
         assert_eq!(result, RespValue::Integer(0));
     }
 
-    #[test]
-    fn test_scard_with_data() {
+    #[tokio::test]
+    async fn test_scard_with_data() {
         let store = test_store();
         sadd(&store, &[b("myset"), b("a"), b("b"), b("c")]);
         let result = scard(&store, &[b("myset")]);
         assert_eq!(result, RespValue::Integer(3));
     }
 
-    #[test]
-    fn test_scard_wrong_type() {
+    #[tokio::test]
+    async fn test_scard_wrong_type() {
         let store = test_store();
         store.set(b("mykey"), DataType::String(b("hello")), None);
         let result = scard(&store, &[b("mykey")]);
@@ -914,8 +914,8 @@ mod tests {
     }
 
     // --- SREM ---
-    #[test]
-    fn test_srem_existing() {
+    #[tokio::test]
+    async fn test_srem_existing() {
         let store = test_store();
         sadd(&store, &[b("myset"), b("a"), b("b"), b("c")]);
         let result = srem(&store, &[b("myset"), b("a"), b("c")]);
@@ -923,24 +923,24 @@ mod tests {
         assert_eq!(scard(&store, &[b("myset")]), RespValue::Integer(1));
     }
 
-    #[test]
-    fn test_srem_missing_member() {
+    #[tokio::test]
+    async fn test_srem_missing_member() {
         let store = test_store();
         sadd(&store, &[b("myset"), b("a")]);
         let result = srem(&store, &[b("myset"), b("b")]);
         assert_eq!(result, RespValue::Integer(0));
     }
 
-    #[test]
-    fn test_srem_missing_key() {
+    #[tokio::test]
+    async fn test_srem_missing_key() {
         let store = test_store();
         let result = srem(&store, &[b("myset"), b("a")]);
         assert_eq!(result, RespValue::Integer(0));
     }
 
     // --- SPOP ---
-    #[test]
-    fn test_spop_single() {
+    #[tokio::test]
+    async fn test_spop_single() {
         let store = test_store();
         sadd(&store, &[b("myset"), b("a"), b("b"), b("c")]);
         let result = spop(&store, &[b("myset")]);
@@ -948,8 +948,8 @@ mod tests {
         assert_eq!(scard(&store, &[b("myset")]), RespValue::Integer(2));
     }
 
-    #[test]
-    fn test_spop_with_count() {
+    #[tokio::test]
+    async fn test_spop_with_count() {
         let store = test_store();
         sadd(&store, &[b("myset"), b("a"), b("b"), b("c")]);
         let result = spop(&store, &[b("myset"), b("2")]);
@@ -961,23 +961,23 @@ mod tests {
         assert_eq!(scard(&store, &[b("myset")]), RespValue::Integer(1));
     }
 
-    #[test]
-    fn test_spop_missing_key() {
+    #[tokio::test]
+    async fn test_spop_missing_key() {
         let store = test_store();
         let result = spop(&store, &[b("myset")]);
         assert_eq!(result, RespValue::BulkString(None));
     }
 
-    #[test]
-    fn test_spop_missing_key_with_count() {
+    #[tokio::test]
+    async fn test_spop_missing_key_with_count() {
         let store = test_store();
         let result = spop(&store, &[b("myset"), b("2")]);
         assert_eq!(result, RespValue::Array(Some(vec![])));
     }
 
     // --- SRANDMEMBER ---
-    #[test]
-    fn test_srandmember_single() {
+    #[tokio::test]
+    async fn test_srandmember_single() {
         let store = test_store();
         sadd(&store, &[b("myset"), b("a"), b("b"), b("c")]);
         let result = srandmember(&store, &[b("myset")]);
@@ -986,8 +986,8 @@ mod tests {
         assert_eq!(scard(&store, &[b("myset")]), RespValue::Integer(3));
     }
 
-    #[test]
-    fn test_srandmember_with_positive_count() {
+    #[tokio::test]
+    async fn test_srandmember_with_positive_count() {
         let store = test_store();
         sadd(&store, &[b("myset"), b("a"), b("b"), b("c")]);
         let result = srandmember(&store, &[b("myset"), b("2")]);
@@ -998,8 +998,8 @@ mod tests {
         assert_eq!(arr.len(), 2);
     }
 
-    #[test]
-    fn test_srandmember_with_negative_count() {
+    #[tokio::test]
+    async fn test_srandmember_with_negative_count() {
         let store = test_store();
         sadd(&store, &[b("myset"), b("a"), b("b")]);
         let result = srandmember(&store, &[b("myset"), b("-5")]);
@@ -1010,16 +1010,16 @@ mod tests {
         assert_eq!(arr.len(), 5);
     }
 
-    #[test]
-    fn test_srandmember_missing_key() {
+    #[tokio::test]
+    async fn test_srandmember_missing_key() {
         let store = test_store();
         let result = srandmember(&store, &[b("myset")]);
         assert_eq!(result, RespValue::BulkString(None));
     }
 
     // --- SMOVE ---
-    #[test]
-    fn test_smove_success() {
+    #[tokio::test]
+    async fn test_smove_success() {
         let store = test_store();
         sadd(&store, &[b("src"), b("a"), b("b")]);
         let result = smove(&store, &[b("src"), b("dst"), b("a")]);
@@ -1034,24 +1034,24 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_smove_not_in_source() {
+    #[tokio::test]
+    async fn test_smove_not_in_source() {
         let store = test_store();
         sadd(&store, &[b("src"), b("a")]);
         let result = smove(&store, &[b("src"), b("dst"), b("b")]);
         assert_eq!(result, RespValue::Integer(0));
     }
 
-    #[test]
-    fn test_smove_missing_source() {
+    #[tokio::test]
+    async fn test_smove_missing_source() {
         let store = test_store();
         let result = smove(&store, &[b("src"), b("dst"), b("a")]);
         assert_eq!(result, RespValue::Integer(0));
     }
 
     // --- SUNION ---
-    #[test]
-    fn test_sunion_basic() {
+    #[tokio::test]
+    async fn test_sunion_basic() {
         let store = test_store();
         sadd(&store, &[b("s1"), b("a"), b("b")]);
         sadd(&store, &[b("s2"), b("b"), b("c")]);
@@ -1063,8 +1063,8 @@ mod tests {
         assert_eq!(arr.len(), 3);
     }
 
-    #[test]
-    fn test_sunion_with_missing_key() {
+    #[tokio::test]
+    async fn test_sunion_with_missing_key() {
         let store = test_store();
         sadd(&store, &[b("s1"), b("a")]);
         let result = sunion(&store, &[b("s1"), b("missing")]);
@@ -1075,16 +1075,16 @@ mod tests {
         assert_eq!(arr.len(), 1);
     }
 
-    #[test]
-    fn test_sunion_empty() {
+    #[tokio::test]
+    async fn test_sunion_empty() {
         let store = test_store();
         let result = sunion(&store, &[b("missing1"), b("missing2")]);
         assert_eq!(result, RespValue::Array(Some(vec![])));
     }
 
     // --- SINTER ---
-    #[test]
-    fn test_sinter_basic() {
+    #[tokio::test]
+    async fn test_sinter_basic() {
         let store = test_store();
         sadd(&store, &[b("s1"), b("a"), b("b"), b("c")]);
         sadd(&store, &[b("s2"), b("b"), b("c"), b("d")]);
@@ -1096,8 +1096,8 @@ mod tests {
         assert_eq!(arr.len(), 2);
     }
 
-    #[test]
-    fn test_sinter_no_overlap() {
+    #[tokio::test]
+    async fn test_sinter_no_overlap() {
         let store = test_store();
         sadd(&store, &[b("s1"), b("a")]);
         sadd(&store, &[b("s2"), b("b")]);
@@ -1105,8 +1105,8 @@ mod tests {
         assert_eq!(result, RespValue::Array(Some(vec![])));
     }
 
-    #[test]
-    fn test_sinter_missing_key() {
+    #[tokio::test]
+    async fn test_sinter_missing_key() {
         let store = test_store();
         sadd(&store, &[b("s1"), b("a")]);
         let result = sinter(&store, &[b("s1"), b("missing")]);
@@ -1114,8 +1114,8 @@ mod tests {
     }
 
     // --- SDIFF ---
-    #[test]
-    fn test_sdiff_basic() {
+    #[tokio::test]
+    async fn test_sdiff_basic() {
         let store = test_store();
         sadd(&store, &[b("s1"), b("a"), b("b"), b("c")]);
         sadd(&store, &[b("s2"), b("b")]);
@@ -1127,8 +1127,8 @@ mod tests {
         assert_eq!(arr.len(), 2);
     }
 
-    #[test]
-    fn test_sdiff_first_missing() {
+    #[tokio::test]
+    async fn test_sdiff_first_missing() {
         let store = test_store();
         sadd(&store, &[b("s2"), b("a")]);
         let result = sdiff(&store, &[b("missing"), b("s2")]);
@@ -1136,8 +1136,8 @@ mod tests {
     }
 
     // --- SUNIONSTORE ---
-    #[test]
-    fn test_sunionstore_basic() {
+    #[tokio::test]
+    async fn test_sunionstore_basic() {
         let store = test_store();
         sadd(&store, &[b("s1"), b("a"), b("b")]);
         sadd(&store, &[b("s2"), b("b"), b("c")]);
@@ -1147,8 +1147,8 @@ mod tests {
     }
 
     // --- SINTERSTORE ---
-    #[test]
-    fn test_sinterstore_basic() {
+    #[tokio::test]
+    async fn test_sinterstore_basic() {
         let store = test_store();
         sadd(&store, &[b("s1"), b("a"), b("b")]);
         sadd(&store, &[b("s2"), b("b"), b("c")]);
@@ -1161,8 +1161,8 @@ mod tests {
     }
 
     // --- SDIFFSTORE ---
-    #[test]
-    fn test_sdiffstore_basic() {
+    #[tokio::test]
+    async fn test_sdiffstore_basic() {
         let store = test_store();
         sadd(&store, &[b("s1"), b("a"), b("b")]);
         sadd(&store, &[b("s2"), b("b")]);
@@ -1175,8 +1175,8 @@ mod tests {
     }
 
     // --- SSCAN ---
-    #[test]
-    fn test_sscan_full_iteration() {
+    #[tokio::test]
+    async fn test_sscan_full_iteration() {
         let store = test_store();
         sadd(&store, &[b("myset"), b("a1"), b("a2"), b("b1"), b("b2")]);
 
@@ -1222,8 +1222,8 @@ mod tests {
         assert_eq!(cursor2, 0);
     }
 
-    #[test]
-    fn test_sscan_with_match() {
+    #[tokio::test]
+    async fn test_sscan_with_match() {
         let store = test_store();
         sadd(&store, &[b("myset"), b("a1"), b("a2"), b("b1")]);
         let result = sscan(
@@ -1240,8 +1240,8 @@ mod tests {
         assert_eq!(items.len(), 2);
     }
 
-    #[test]
-    fn test_sscan_missing_key() {
+    #[tokio::test]
+    async fn test_sscan_missing_key() {
         let store = test_store();
         let result = sscan(&store, &[b("myset"), b("0")]);
         assert_eq!(
@@ -1253,8 +1253,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_sscan_wrong_type() {
+    #[tokio::test]
+    async fn test_sscan_wrong_type() {
         let store = test_store();
         store.set(b("mykey"), DataType::String(b("hello")), None);
         let result = sscan(&store, &[b("mykey"), b("0")]);
