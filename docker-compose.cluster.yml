@@ -1,0 +1,80 @@
+services:
+  valkey-node1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "6379:6379"
+    volumes:
+      - node1-data:/data
+    command: >
+      sh -c "valkey-server"
+    environment:
+      - VALKEY_CLUSTER_ENABLED=yes
+    healthcheck:
+      test: ["CMD", "sh", "-c", "echo PING | nc -w 1 localhost 6379 | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  valkey-node2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "6380:6379"
+    volumes:
+      - node2-data:/data
+    command: >
+      sh -c "valkey-server"
+    environment:
+      - VALKEY_CLUSTER_ENABLED=yes
+    healthcheck:
+      test: ["CMD", "sh", "-c", "echo PING | nc -w 1 localhost 6379 | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  valkey-node3:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "6381:6379"
+    volumes:
+      - node3-data:/data
+    command: >
+      sh -c "valkey-server"
+    environment:
+      - VALKEY_CLUSTER_ENABLED=yes
+    healthcheck:
+      test: ["CMD", "sh", "-c", "echo PING | nc -w 1 localhost 6379 | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  cluster-init:
+    image: debian:bookworm-slim
+    depends_on:
+      valkey-node1:
+        condition: service_healthy
+      valkey-node2:
+        condition: service_healthy
+      valkey-node3:
+        condition: service_healthy
+    entrypoint: >
+      sh -c "
+        apt-get update && apt-get install -y --no-install-recommends netcat-openbsd &&
+        echo 'CLUSTER MEET node2' | nc -w 1 valkey-node1 6379 &&
+        echo 'CLUSTER MEET node3' | nc -w 1 valkey-node1 6379 &&
+        echo 'Cluster formation initiated'
+      "
+    restart: "no"
+
+volumes:
+  node1-data:
+  node2-data:
+  node3-data:

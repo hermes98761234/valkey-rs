@@ -17,7 +17,7 @@ tokio = { version = "1", features = ["full"] }
 tokio-util = { version = "0.7", features = ["codec"] }
 dashmap = "6"
 bytes = "1"
-mlua = { version = "0.10", features = ["lua54", "async", "send"] }
+mlua = { version = "0.10", features = ["lua54", "async", "send", "vendored"] }
 tokio-rustls = "0.26"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

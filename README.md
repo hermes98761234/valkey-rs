@@ -46,6 +46,38 @@ redis-cli ping
 # PONG
 ```
 
+## Docker
+
+### Standalone
+
+```sh
+docker compose up -d
+docker compose exec valkey sh -c 'echo PING | nc -w 1 localhost 6379'
+# PONG
+```
+
+### Replication (Primary + Replica)
+
+```sh
+docker compose -f docker-compose.replication.yml up -d
+docker compose -f docker-compose.replication.yml exec valkey-primary sh -c 'echo PING | nc -w 1 localhost 6379'
+docker compose -f docker-compose.replication.yml exec valkey-replica sh -c 'echo PING | nc -w 1 localhost 6379'
+```
+
+### Cluster (3 Nodes)
+
+```sh
+docker compose -f docker-compose.cluster.yml up -d
+docker compose -f docker-compose.cluster.yml exec valkey-node1 sh -c 'echo PING | nc -w 1 localhost 6379'
+```
+
+### Build Image Manually
+
+```sh
+docker build -t valkey-rs .
+docker run -d -p 6379:6379 -v ./data:/data valkey-rs
+```
+
 ## Configuration
 
 | Option | Default | Description |

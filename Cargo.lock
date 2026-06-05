@@ -998,6 +998,7 @@ dependencies = [
  "bytes",
  "dashmap",
  "fastrand",
+ "lazy_static",
  "ordered-float",
  "rand",
  "thiserror",

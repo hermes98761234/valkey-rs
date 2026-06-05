@@ -266,7 +266,7 @@ pub fn lfu_log_incr(counter: u64) -> u64 {
         }
         let r = fastrand::u64(..);
         let threshold = counter.saturating_mul(10);
-        if r.is_multiple_of(threshold) {
+        if r % threshold == 0 {
             counter + 1
         } else {
             counter
@@ -518,7 +518,7 @@ impl Store {
         rx
     }
 
-    fn notify_watchers(&self, key: &Bytes) {
+    pub fn notify_watchers(&self, key: &Bytes) {
         if let Some((_, senders)) = self.watchers.remove(key) {
             for tx in senders {
                 let _ = tx.send(());
