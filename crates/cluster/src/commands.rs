@@ -135,6 +135,7 @@ impl ClusterCommandHandler {
             "MYID" => self.cluster_myid(),
             "SLOTS" => self.cluster_slots(),
             "SAVECONFIG" => self.cluster_saveconfig(),
+            "BUMPEPOCH" => self.cluster_bumpepoch(),
             _ => format!("-ERR Unknown CLUSTER subcommand '{}'\r\n", subcmd),
         }
     }
@@ -454,6 +455,19 @@ impl ClusterCommandHandler {
         "+OK\r\n".to_string()
     }
 
+    fn cluster_bumpepoch(&self) -> String {
+        // Increment both the global current_epoch and myself.epoch
+        {
+            let mut epoch = self.state.current_epoch.write().unwrap();
+            *epoch += 1;
+            let new_epoch = *epoch;
+            drop(epoch);
+            self.state.set_self_epoch(new_epoch);
+        }
+        self.save_config();
+        format!(":{}\r\n", self.state.current_epoch.read().unwrap())
+    }
+
     fn save_config(&self) {
         let mut content = String::new();
         for entry in self.state.nodes.iter() {
@@ -667,5 +681,33 @@ mod tests {
         let resp = handler.handle("SETSLOT", &args);
         assert_eq!(resp, "+OK\r\n");
         assert!(state2.is_importing(0).is_none());
+    }
+
+    #[test]
+    fn cluster_bumpepoch_increments_epoch() {
+        let state = test_state();
+        let handler = ClusterCommandHandler::new(state.clone(), "/tmp/test_bumpepoch.conf".into());
+
+        // Initial epoch should be 0
+        assert_eq!(*state.current_epoch.read().unwrap(), 0);
+        let myself = state.myself.read().unwrap();
+        assert_eq!(myself.epoch, 0);
+        drop(myself);
+
+        // BUMPEPOCH should increment to 1
+        let resp = handler.handle("BUMPEPOCH", &[]);
+        assert_eq!(resp, ":1\r\n");
+        assert_eq!(*state.current_epoch.read().unwrap(), 1);
+        let myself = state.myself.read().unwrap();
+        assert_eq!(myself.epoch, 1);
+        drop(myself);
+
+        // BUMPEPOCH again should increment to 2
+        let resp = handler.handle("BUMPEPOCH", &[]);
+        assert_eq!(resp, ":2\r\n");
+        assert_eq!(*state.current_epoch.read().unwrap(), 2);
+
+        // Clean up
+        let _ = std::fs::remove_file("/tmp/test_bumpepoch.conf");
     }
 }

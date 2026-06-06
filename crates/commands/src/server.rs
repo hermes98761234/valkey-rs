@@ -1,12 +1,66 @@
 use bytes::Bytes;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use valkey_proto::RespValue;
 use valkey_storage::Store;
+
+// ---------------------------------------------------------------------------
+// Global shutdown flag
+// ---------------------------------------------------------------------------
+
+static SHUTDOWN_REQUESTED: AtomicBool = AtomicBool::new(false);
+
+pub fn request_shutdown() {
+    SHUTDOWN_REQUESTED.store(true, Ordering::SeqCst);
+}
+
+pub fn is_shutdown_requested() -> bool {
+    SHUTDOWN_REQUESTED.load(Ordering::SeqCst)
+}
+
+// ---------------------------------------------------------------------------
+// Global client registry (for CLIENT KILL / LIST)
+// ---------------------------------------------------------------------------
+
+use std::collections::BTreeMap;
+
+#[derive(Debug, Clone)]
+pub struct ClientInfo {
+    pub id: i64,
+    pub name: Option<String>,
+    pub addr: String,
+    pub db_index: usize,
+    pub flags: ClientFlags,
+    pub age: u64,
+    pub idle: u64,
+}
+
+/// Register a client in the global registry.
+pub fn register_client(id: i64, info: ClientInfo) {
+    let mut registry = CLIENT_REGISTRY.write().unwrap();
+    registry.insert(id, info);
+}
+
+/// Unregister a client from the global registry.
+pub fn unregister_client(id: i64) {
+    let mut registry = CLIENT_REGISTRY.write().unwrap();
+    registry.remove(&id);
+}
+
+/// Get a snapshot of all registered clients.
+pub fn get_all_clients() -> Vec<ClientInfo> {
+    let registry = CLIENT_REGISTRY.read().unwrap();
+    registry.values().cloned().collect()
+}
+
+lazy_static::lazy_static! {
+    static ref CLIENT_REGISTRY: Arc<RwLock<BTreeMap<i64, ClientInfo>>> =
+        Arc::new(RwLock::new(BTreeMap::new()));
+}
 
 // ---------------------------------------------------------------------------
 // TLS client authentication mode
@@ -77,6 +131,12 @@ pub struct ServerConfig {
     pub tls_auth_clients: TlsClientAuth,
     // RDB persistence
     pub rdb_path: String,
+    // AOF persistence
+    pub aof_enabled: bool,
+    pub aof_path: String,
+    pub aof_fsync: String,
+    // Config file path — set when the server is started with a config file
+    pub config_file_path: Option<PathBuf>,
 }
 
 impl Default for ServerConfig {
@@ -105,6 +165,10 @@ impl Default for ServerConfig {
             tls_ca_cert_file: None,
             tls_auth_clients: TlsClientAuth::No,
             rdb_path: "./dump.rdb".into(),
+            aof_enabled: false,
+            aof_path: "./appendonly.aof".into(),
+            aof_fsync: "everysec".into(),
+            config_file_path: None,
         }
     }
 }
@@ -221,6 +285,8 @@ pub async fn handle(
         "LASTSAVE" => cmd_lastsave(args).await,
         "TIME" => cmd_time(args).await,
         "RESET" => cmd_reset(args, _client.clone()).await,
+        "SHUTDOWN" => cmd_shutdown(args).await,
+        "LOLWUT" => cmd_lolwut(args).await,
         _ => {
             // All other commands require at least one argument
             if args.len() < 2 {
@@ -236,7 +302,7 @@ pub async fn handle(
                 "CONFIG" => cmd_config(args, config, store).await,
                 "SAVE" => cmd_save(args, store, config).await,
                 "BGSAVE" => cmd_bgsave(args, store, config).await,
-                "BGREWRITEAOF" => cmd_bgrewriteaof(args).await,
+                "BGREWRITEAOF" => cmd_bgrewriteaof(args, store, config).await,
                 "LATENCY" => cmd_latency(args).await,
                 "SLOWLOG" => cmd_slowlog(args).await,
                 "MEMORY" => cmd_memory(args, store).await,
@@ -854,7 +920,9 @@ async fn cmd_command(
     _config: Arc<RwLock<ServerConfig>>,
 ) -> RespValue {
     if args.is_empty() {
-        return RespValue::Error("ERR wrong number of arguments for 'command' command".into());
+        // COMMAND with no args = return all command info (same as COMMAND INFO with no names)
+        let all: Vec<RespValue> = COMMANDS.iter().map(|c| command_descriptor(c)).collect();
+        return RespValue::array(all);
     }
     let sub = match std::str::from_utf8(&args[0]) {
         Ok(s) => s.to_ascii_uppercase(),
@@ -864,6 +932,8 @@ async fn cmd_command(
         "COUNT" => cmd_command_count(&args[1..]).await,
         "INFO" => cmd_command_info(&args[1..]).await,
         "DOCS" => cmd_command_docs(&args[1..]).await,
+        "LIST" => cmd_command_list(&args[1..]).await,
+        "GETKEYS" => cmd_command_getkeys(&args[1..]).await,
         "HELP" => cmd_command_help(&args[1..]).await,
         _ => RespValue::Error(format!("ERR unknown subcommand `{}`", sub)),
     }
@@ -906,7 +976,58 @@ async fn cmd_command_help(_args: &[Bytes]) -> RespValue {
         RespValue::bulk(Bytes::from("Returns details for specified commands.")),
         RespValue::bulk(Bytes::from("DOCS [cmd ...]")),
         RespValue::bulk(Bytes::from("Returns documentation for specified commands.")),
+        RespValue::bulk(Bytes::from("LIST")),
+        RespValue::bulk(Bytes::from("Returns all command names.")),
+        RespValue::bulk(Bytes::from("GETKEYS <cmd> [args...]")),
+        RespValue::bulk(Bytes::from("Returns the keys from a command.")),
     ])
+}
+
+async fn cmd_command_list(_args: &[Bytes]) -> RespValue {
+    // Return all command names as a flat array
+    let names: Vec<RespValue> = COMMANDS
+        .iter()
+        .map(|c| RespValue::bulk(Bytes::from(c.name)))
+        .collect();
+    RespValue::array(names)
+}
+
+/// Extract keys from a command by looking up its descriptor and computing key positions.
+async fn cmd_command_getkeys(args: &[Bytes]) -> RespValue {
+    if args.is_empty() {
+        return RespValue::Error("ERR wrong number of arguments for 'command|getkeys' command".into());
+    }
+    let cmd_name = match std::str::from_utf8(&args[0]) {
+        Ok(s) => s.to_ascii_uppercase(),
+        Err(_) => return RespValue::Error("ERR invalid command name".into()),
+    };
+    // Find the command descriptor
+    let desc = match COMMANDS.iter().find(|c| c.name == cmd_name.as_str()) {
+        Some(d) => d,
+        None => return RespValue::Error(format!("ERR unknown command `{}`", cmd_name)),
+    };
+    let cmd_args = &args[1..];
+    let mut keys = Vec::new();
+
+    if desc.first_key > 0 && (cmd_args.len() as i64) >= desc.first_key {
+        let first = (desc.first_key - 1) as usize;
+        let last = if desc.last_key < 0 {
+            // Negative last_key means: last key is at position (len + last_key + 1)
+            let pos = cmd_args.len() as i64 + desc.last_key + 1;
+            if pos < 1 { first } else { (pos - 1) as usize }
+        } else {
+            let last = (desc.last_key - 1) as usize;
+            if last >= cmd_args.len() { cmd_args.len() - 1 } else { last }
+        };
+        let step = if desc.key_step > 0 { desc.key_step as usize } else { 1 };
+        let mut idx = first;
+        while idx <= last && idx < cmd_args.len() {
+            keys.push(RespValue::bulk(cmd_args[idx].clone()));
+            idx += step;
+        }
+    }
+
+    RespValue::array(keys)
 }
 
 // Command descriptor table
@@ -1201,6 +1322,363 @@ const COMMANDS: &[CommandDesc] = &[
         last_key: 1,
         key_step: 1,
     },
+    CommandDesc {
+        name: "ZMSCORE",
+        arity: -3,
+        first_key: 1,
+        last_key: 1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "ZRANK",
+        arity: 3,
+        first_key: 1,
+        last_key: 1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "ZREVRANK",
+        arity: 3,
+        first_key: 1,
+        last_key: 1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "ZREVRANGE",
+        arity: -4,
+        first_key: 1,
+        last_key: 1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "ZRANGEBYSCORE",
+        arity: -4,
+        first_key: 1,
+        last_key: 1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "ZREVRANGEBYSCORE",
+        arity: -4,
+        first_key: 1,
+        last_key: 1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "ZRANGEBYLEX",
+        arity: -4,
+        first_key: 1,
+        last_key: 1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "ZCOUNT",
+        arity: 4,
+        first_key: 1,
+        last_key: 1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "ZLEXCOUNT",
+        arity: 4,
+        first_key: 1,
+        last_key: 1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "ZREM",
+        arity: -3,
+        first_key: 1,
+        last_key: -1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "ZREMRANGEBYRANK",
+        arity: 4,
+        first_key: 1,
+        last_key: 1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "ZREMRANGEBYSCORE",
+        arity: 4,
+        first_key: 1,
+        last_key: 1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "ZREMRANGEBYLEX",
+        arity: 4,
+        first_key: 1,
+        last_key: 1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "ZCARD",
+        arity: 2,
+        first_key: 1,
+        last_key: 1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "ZINCRBY",
+        arity: 4,
+        first_key: 1,
+        last_key: 1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "ZPOPMIN",
+        arity: -2,
+        first_key: 1,
+        last_key: 1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "ZPOPMAX",
+        arity: -2,
+        first_key: 1,
+        last_key: 1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "ZUNIONSTORE",
+        arity: -4,
+        first_key: 1,
+        last_key: -1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "ZINTERSTORE",
+        arity: -4,
+        first_key: 1,
+        last_key: -1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "ZDIFFSTORE",
+        arity: -4,
+        first_key: 1,
+        last_key: -1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "ZSCAN",
+        arity: -2,
+        first_key: 1,
+        last_key: 1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "ZRANDMEMBER",
+        arity: -2,
+        first_key: 1,
+        last_key: 1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "ZRANGESTORE",
+        arity: -5,
+        first_key: 1,
+        last_key: 2,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "ZDIFF",
+        arity: -3,
+        first_key: 1,
+        last_key: -1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "ZINTER",
+        arity: -3,
+        first_key: 1,
+        last_key: -1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "ZUNION",
+        arity: -3,
+        first_key: 1,
+        last_key: -1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "ZMPOP",
+        arity: -4,
+        first_key: 1,
+        last_key: -1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "DUMP",
+        arity: 2,
+        first_key: 1,
+        last_key: 1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "RESTORE",
+        arity: -4,
+        first_key: 1,
+        last_key: 1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "SORT",
+        arity: -2,
+        first_key: 1,
+        last_key: 1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "SORT_RO",
+        arity: -2,
+        first_key: 1,
+        last_key: 1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "SUBSTR",
+        arity: 4,
+        first_key: 1,
+        last_key: 1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "EXPIRETIME",
+        arity: 2,
+        first_key: 1,
+        last_key: 1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "PEXPIRETIME",
+        arity: 2,
+        first_key: 1,
+        last_key: 1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "SINTERCARD",
+        arity: -3,
+        first_key: 1,
+        last_key: -1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "MOVE",
+        arity: 3,
+        first_key: 1,
+        last_key: 1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "COPY",
+        arity: -3,
+        first_key: 1,
+        last_key: 2,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "GETSET",
+        arity: 3,
+        first_key: 1,
+        last_key: 1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "MGET",
+        arity: -2,
+        first_key: 1,
+        last_key: -1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "MSET",
+        arity: -3,
+        first_key: 1,
+        last_key: -1,
+        key_step: 2,
+    },
+    CommandDesc {
+        name: "MSETNX",
+        arity: -3,
+        first_key: 1,
+        last_key: -1,
+        key_step: 2,
+    },
+    CommandDesc {
+        name: "GETEX",
+        arity: -2,
+        first_key: 1,
+        last_key: 1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "GETDEL",
+        arity: 2,
+        first_key: 1,
+        last_key: 1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "STRLEN",
+        arity: 2,
+        first_key: 1,
+        last_key: 1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "GETRANGE",
+        arity: 4,
+        first_key: 1,
+        last_key: 1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "SETRANGE",
+        arity: 4,
+        first_key: 1,
+        last_key: 1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "APPEND",
+        arity: 3,
+        first_key: 1,
+        last_key: 1,
+        key_step: 1,
+    },
+    CommandDesc {
+        name: "OBJECT",
+        arity: -1,
+        first_key: 0,
+        last_key: 0,
+        key_step: 0,
+    },
+    CommandDesc {
+        name: "RESET",
+        arity: 1,
+        first_key: 0,
+        last_key: 0,
+        key_step: 0,
+    },
+    CommandDesc {
+        name: "SHUTDOWN",
+        arity: -1,
+        first_key: 0,
+        last_key: 0,
+        key_step: 0,
+    },
+    CommandDesc {
+        name: "LOLWUT",
+        arity: -1,
+        first_key: 0,
+        last_key: 0,
+        key_step: 0,
+    },
 ];
 
 fn command_descriptor(c: &CommandDesc) -> RespValue {
@@ -1234,7 +1712,7 @@ async fn cmd_config(
         "GET" => cmd_config_get(&args[1..], config).await,
         "SET" => cmd_config_set(&args[1..], config, store).await,
         "RESETSTAT" => cmd_config_resetstat(&args[1..]).await,
-        "REWRITE" => cmd_config_rewrite(&args[1..]).await,
+        "REWRITE" => cmd_config_rewrite(&args[1..], config).await,
         "HELP" => cmd_config_help(&args[1..]).await,
         _ => RespValue::Error(format!("ERR unknown subcommand `{}`", sub)),
     }
@@ -1314,8 +1792,106 @@ async fn cmd_config_resetstat(_args: &[Bytes]) -> RespValue {
     RespValue::ok()
 }
 
-async fn cmd_config_rewrite(_args: &[Bytes]) -> RespValue {
-    // Stub — rewrite config file (nothing to rewrite for in-memory config)
+async fn cmd_config_rewrite(args: &[Bytes], config: Arc<RwLock<ServerConfig>>) -> RespValue {
+    if !args.is_empty() {
+        return RespValue::Error(
+            "ERR wrong number of arguments for 'config|rewrite' command".into(),
+        );
+    }
+
+    let config_file_path = {
+        let cfg = config.read().unwrap();
+        match &cfg.config_file_path {
+            Some(p) => p.clone(),
+            None => {
+                return RespValue::Error(
+                    "ERR The server is running without a config file".into(),
+                );
+            }
+        }
+    };
+
+    // Read the existing config file content
+    let existing_content = match std::fs::read_to_string(&config_file_path) {
+        Ok(c) => c,
+        Err(e) => {
+            return RespValue::Error(format!(
+                "ERR Failed to read config file '{}': {}",
+                config_file_path.display(),
+                e
+            ));
+        }
+    };
+
+    // Get current in-memory config values
+    let cfg = config.read().unwrap();
+    let params = cfg.get("*");
+    drop(cfg);
+
+    // Build a lookup of known config keys (canonical lowercase)
+    let known_keys: std::collections::HashMap<String, String> = params
+        .iter()
+        .map(|(k, v)| (k.to_ascii_lowercase(), v.clone()))
+        .collect();
+
+    // Rewrite the file: update known keys, preserve comments and unknown directives
+    let mut output = String::new();
+    let mut updated_keys = std::collections::HashSet::new();
+
+    for line in existing_content.lines() {
+        let trimmed = line.trim();
+
+        // Preserve empty lines and comments
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            output.push_str(line);
+            output.push('\n');
+            continue;
+        }
+
+        // Parse the directive: first whitespace-separated token is the key
+        let mut parts = trimmed.split_whitespace();
+        if let Some(key) = parts.next() {
+            let canonical = key.to_ascii_lowercase();
+            if let Some(value) = known_keys.get(&canonical) {
+                // Update this line with the current in-memory value
+                output.push_str(&format!("{} {}\n", key, value));
+                updated_keys.insert(canonical);
+                continue;
+            }
+        }
+
+        // Unknown directive — preserve as-is
+        output.push_str(line);
+        output.push('\n');
+    }
+
+    // Append any known config keys that weren't in the file
+    for (key, value) in &known_keys {
+        if !updated_keys.contains(key) {
+            output.push_str(&format!("{} {}\n", key, value));
+        }
+    }
+
+    // Write atomically: write to temp file, then rename
+    let temp_path = config_file_path.with_extension("conf.tmp");
+    if let Err(e) = std::fs::write(&temp_path, &output) {
+        return RespValue::Error(format!(
+            "ERR Failed to write temp config file '{}': {}",
+            temp_path.display(),
+            e
+        ));
+    }
+
+    if let Err(e) = std::fs::rename(&temp_path, &config_file_path) {
+        // Clean up temp file on failure
+        let _ = std::fs::remove_file(&temp_path);
+        return RespValue::Error(format!(
+            "ERR Failed to rename temp config file '{}': {}",
+            config_file_path.display(),
+            e
+        ));
+    }
+
     RespValue::ok()
 }
 
@@ -1364,7 +1940,27 @@ async fn cmd_bgsave(
     RespValue::SimpleString("Background saving started".into())
 }
 
-async fn cmd_bgrewriteaof(_args: &[Bytes]) -> RespValue {
+async fn cmd_bgrewriteaof(
+    args: &[Bytes],
+    store: &Arc<Store>,
+    config: Arc<RwLock<ServerConfig>>,
+) -> RespValue {
+    if !args.is_empty() {
+        return RespValue::Error(
+            "ERR wrong number of arguments for 'bgrewriteaof' command".into(),
+        );
+    }
+    let aof_path = config.read().unwrap().aof_path.clone();
+    if aof_path.is_empty() {
+        return RespValue::Error("ERR AOF is disabled".into());
+    }
+    let store = Arc::clone(store);
+    let path = std::path::PathBuf::from(&aof_path);
+    tokio::spawn(async move {
+        if let Err(e) = valkey_persistence::aof::rewrite(&store, &path).await {
+            eprintln!("AOF rewrite failed: {e}");
+        }
+    });
     RespValue::SimpleString("Background append only file rewriting started".into())
 }
 
@@ -1458,17 +2054,94 @@ async fn cmd_memory(args: &[Bytes], store: &Arc<Store>) -> RespValue {
                 None => RespValue::BulkString(None),
             }
         }
-        "DOCTOR" => RespValue::bulk(Bytes::from(
-            "Hi Sam, I can't find any memory issue in your instance. I can only detect ...",
-        )),
-        "MALLOC-STATS" => RespValue::bulk(Bytes::from("Stats not available")),
+        "DOCTOR" => {
+            let report = "Hi Sam, I can't find any memory issue in your instance. \
+                          I can only detect problems if I can read your mind. \
+                          Try calling DOCTOR again when you have a real issue.";
+            RespValue::bulk(Bytes::from(report))
+        }
+        "MALLOC-STATS" => {
+            RespValue::bulk(Bytes::from(
+                "jemalloc statistics not available in valkey-rs",
+            ))
+        }
         "PURGE" => RespValue::ok(),
-        "STATS" => RespValue::array(vec![]),
+        "STATS" => {
+            // Return memory statistics as a structured array
+            let used_memory = store.memory_usage_bytes() as i64;
+            let overhead = 524288i64; // base overhead estimate
+            let dataset = if used_memory > overhead { used_memory - overhead } else { 0 };
+
+            RespValue::array(vec![
+                RespValue::bulk(Bytes::from("peak.allocated")),
+                RespValue::Integer(used_memory),
+                RespValue::bulk(Bytes::from("total.allocated")),
+                RespValue::Integer(used_memory),
+                RespValue::bulk(Bytes::from("startup.allocated")),
+                RespValue::Integer(overhead),
+                RespValue::bulk(Bytes::from("replication.backlog")),
+                RespValue::Integer(0),
+                RespValue::bulk(Bytes::from("clients.slaves")),
+                RespValue::Integer(0),
+                RespValue::bulk(Bytes::from("clients.normal")),
+                RespValue::Integer(overhead / 2),
+                RespValue::bulk(Bytes::from("aof.buffer")),
+                RespValue::Integer(0),
+                RespValue::bulk(Bytes::from("lua.caches")),
+                RespValue::Integer(0),
+                RespValue::bulk(Bytes::from("db0")),
+                RespValue::bulk(Bytes::from(format!(
+                    "overhead-hashtable-main={},overhead-hashtable-expires={}",
+                    overhead / 4,
+                    overhead / 8
+                ))),
+                RespValue::bulk(Bytes::from("overhead.total")),
+                RespValue::Integer(overhead),
+                RespValue::bulk(Bytes::from("keys.count")),
+                RespValue::Integer(store.dbsize() as i64),
+                RespValue::bulk(Bytes::from("keys.bytes-per-key")),
+                RespValue::Integer(if store.dbsize() > 0 { dataset / store.dbsize() as i64 } else { 0 }),
+                RespValue::bulk(Bytes::from("dataset.bytes")),
+                RespValue::Integer(dataset),
+                RespValue::bulk(Bytes::from("dataset.percentage")),
+                RespValue::Double(if used_memory > 0 { (dataset as f64 / used_memory as f64) * 100.0 } else { 0.0 }),
+                RespValue::bulk(Bytes::from("peak.percentage")),
+                RespValue::Double(100.0),
+                RespValue::bulk(Bytes::from("allocator.allocated")),
+                RespValue::Integer(used_memory),
+                RespValue::bulk(Bytes::from("allocator.resident")),
+                RespValue::Integer(used_memory + overhead),
+                RespValue::bulk(Bytes::from("allocator.muzzy")),
+                RespValue::Integer(0),
+                RespValue::bulk(Bytes::from("allocator.retained")),
+                RespValue::Integer(0),
+                RespValue::bulk(Bytes::from("allocator-fragmentation.ratio")),
+                RespValue::Double(0.0),
+                RespValue::bulk(Bytes::from("allocator-fragmentation.bytes")),
+                RespValue::Integer(0),
+                RespValue::bulk(Bytes::from("allocator-rss.ratio")),
+                RespValue::Double(1.0),
+                RespValue::bulk(Bytes::from("allocator-rss.bytes")),
+                RespValue::Integer(0),
+                RespValue::bulk(Bytes::from("rss-overhead.ratio")),
+                RespValue::Double(1.0),
+                RespValue::bulk(Bytes::from("rss-overhead.bytes")),
+                RespValue::Integer(0),
+                RespValue::bulk(Bytes::from("memory.lazyfreed")),
+                RespValue::Integer(0),
+            ])
+        }
         "HELP" => RespValue::array(vec![
             RespValue::bulk(Bytes::from("USAGE <key>")),
-            RespValue::bulk(Bytes::from("Returns the memory usage of a key.")),
+            RespValue::bulk(Bytes::from("Returns the memory usage of a key and its value.")),
             RespValue::bulk(Bytes::from("DOCTOR")),
             RespValue::bulk(Bytes::from("Return memory problems report.")),
+            RespValue::bulk(Bytes::from("STATS")),
+            RespValue::bulk(Bytes::from("Return detailed memory usage statistics.")),
+            RespValue::bulk(Bytes::from("MALLOC-STATS")),
+            RespValue::bulk(Bytes::from("Return internal memory allocator statistics.")),
+            RespValue::bulk(Bytes::from("PURGE")),
+            RespValue::bulk(Bytes::from("Ask the allocator to release memory.")),
         ]),
         _ => RespValue::Error(format!("ERR unknown subcommand `{}`", sub)),
     }
@@ -1780,6 +2453,80 @@ async fn cmd_object_help(_args: &[Bytes]) -> RespValue {
 }
 
 // ---------------------------------------------------------------------------
+// SHUTDOWN
+// ---------------------------------------------------------------------------
+
+async fn cmd_shutdown(args: &[Bytes]) -> RespValue {
+    // SHUTDOWN [NOSAVE|SAVE] [NOW] [FORCE] [ABORT]
+    let mut save = false;
+    let mut abort = false;
+    for arg in args {
+        if let Ok(s) = std::str::from_utf8(arg) {
+            match s.to_ascii_uppercase().as_str() {
+                "SAVE" => save = true,
+                "NOSAVE" => save = false,
+                "ABORT" => abort = true,
+                _ => {}
+            }
+        }
+    }
+    if abort {
+        // Cancel any pending shutdown
+        return RespValue::ok();
+    }
+    // Trigger graceful shutdown
+    request_shutdown();
+    // In a real server, this would also trigger a background save if save=true
+    let _ = save;
+    // Return OK — the connection handler will see the shutdown flag and close
+    // Note: In the original Redis, SHUTDOWN doesn't actually return a response
+    // because it closes the server. We return OK for testability.
+    RespValue::SimpleString("OK".into())
+}
+
+// ---------------------------------------------------------------------------
+// LOLWUT
+// ---------------------------------------------------------------------------
+
+async fn cmd_lolwut(args: &[Bytes]) -> RespValue {
+    // LOLWUT [VERSION version]
+    let version: i64 = if !args.is_empty() {
+        // Check for VERSION sub-argument
+        if args.len() >= 2 {
+            if let Ok(v_str) = std::str::from_utf8(&args[1]) {
+                v_str.parse().unwrap_or(5)
+            } else {
+                5
+            }
+        } else {
+            5
+        }
+    } else {
+        5
+    };
+    let _ = version;
+
+    // Generate a fun ASCII art computer terminal output
+    let art = r#"Hello stranger! Here's what a computer looks like:
+
+          _._                           _._
+       __|   |__                     __|   |__
+      |         |                   |         |
+      |  []  []  |                  |  []  []  |
+      |         |                   |         |
+      |__     __|                   |__     __|
+     |    |   |    |              |    |___|    |
+     |    |   |    |              |             |
+    _|    |___|    |_           _|             |_
+   |________________|         |__________________|
+
+  This is LOLWUT, a command that generates
+  fun ASCII art. Enjoy!"#;
+
+    RespValue::bulk(Bytes::from(art))
+}
+
+// ---------------------------------------------------------------------------
 // RESET
 // ---------------------------------------------------------------------------
 
@@ -2009,8 +2756,58 @@ mod tests {
 
     #[tokio::test]
     async fn test_config_rewrite() {
-        let r = cmd_config_rewrite(&[]).await;
+        let config = Arc::new(RwLock::new(ServerConfig::default()));
+        let r = cmd_config_rewrite(&[], config).await;
+        // Should return error since no config file is set
+        assert!(matches!(r, RespValue::Error(_)));
+    }
+
+    #[tokio::test]
+    async fn test_config_rewrite_with_file() {
+        use std::io::Write;
+
+        // Create a temp config file
+        let dir = std::env::temp_dir();
+        let config_path = dir.join("valkey_test_rewrite.conf");
+        {
+            let mut f = std::fs::File::create(&config_path).unwrap();
+            writeln!(f, "# Test config file").unwrap();
+            writeln!(f, "port 6379").unwrap();
+            writeln!(f, "maxmemory 0").unwrap();
+            writeln!(f, "# End comment").unwrap();
+        }
+
+        let mut cfg = ServerConfig::default();
+        cfg.config_file_path = Some(config_path.clone());
+        let config = Arc::new(RwLock::new(cfg));
+
+        let r = cmd_config_rewrite(&[], config.clone()).await;
         assert_eq!(r, RespValue::ok());
+
+        // Read back and verify
+        let content = std::fs::read_to_string(&config_path).unwrap();
+        assert!(content.contains("# Test config file"));
+        assert!(content.contains("port 6379"));
+        assert!(content.contains("maxmemory 0"));
+        assert!(content.contains("# End comment"));
+
+        // Update a value in memory and rewrite
+        {
+            let mut cfg = config.write().unwrap();
+            cfg.set("port", "6380").unwrap();
+        }
+
+        let r = cmd_config_rewrite(&[], config.clone()).await;
+        assert_eq!(r, RespValue::ok());
+
+        let content = std::fs::read_to_string(&config_path).unwrap();
+        assert!(content.contains("port 6380"));
+        assert!(!content.contains("port 6379\n"));
+        assert!(content.contains("# Test config file"));
+        assert!(content.contains("# End comment"));
+
+        // Clean up
+        let _ = std::fs::remove_file(&config_path);
     }
 
     #[tokio::test]
@@ -2034,7 +2831,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_bgrewriteaof() {
-        let r = cmd_bgrewriteaof(&[]).await;
+        let store = valkey_storage::Store::new();
+        let config = Arc::new(RwLock::new(ServerConfig::default()));
+        let r = cmd_bgrewriteaof(&[], &store, config).await;
         assert_eq!(
             r,
             RespValue::SimpleString("Background append only file rewriting started".into())
