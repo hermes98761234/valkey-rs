@@ -36,6 +36,10 @@ pub async fn handle(args: &[Bytes], store: &Arc<Store>) -> RespValue {
         "RESTORE" => cmd_restore(&args[1..], store).await,
         "WAIT" => cmd_wait(&args[1..], store).await,
         "SORT" => cmd_sort(&args[1..], store).await,
+        "SORT_RO" => cmd_sort_ro(&args[1..], store).await,
+        "SUBSTR" => cmd_substr(&args[1..], store).await,
+        "EXPIRETIME" => cmd_expiretime(&args[1..], store).await,
+        "PEXPIRETIME" => cmd_pexpiretime(&args[1..], store).await,
         "UNLINK" => cmd_unlink(&args[1..], store).await,
         _ => RespValue::Error(format!("ERR unknown command `{}`", cmd)),
     }
@@ -273,17 +277,19 @@ async fn cmd_persist(args: &[Bytes], store: &Arc<Store>) -> RespValue {
     if args.len() != 1 {
         return RespValue::Error("ERR wrong number of arguments for 'persist' command".into());
     }
-    match store.get(&args[0]) {
+    let data = match store.get(&args[0]) {
         Some(e) => {
-            if e.expires_at.is_some() {
-                store.set(args[0].clone(), e.data.clone(), None);
-                RespValue::Integer(1)
-            } else {
-                RespValue::Integer(0)
+            if e.expires_at.is_none() {
+                return RespValue::Integer(0);
             }
+            let d = e.data.clone();
+            drop(e);
+            d
         }
-        None => RespValue::Integer(0),
-    }
+        None => return RespValue::Integer(0),
+    };
+    store.set(args[0].clone(), data, None);
+    RespValue::Integer(1)
 }
 async fn cmd_keys(args: &[Bytes], store: &Arc<Store>) -> RespValue {
     if args.len() != 1 {
@@ -405,14 +411,18 @@ async fn cmd_copy(args: &[Bytes], store: &Arc<Store>) -> RespValue {
         && std::str::from_utf8(&args[2])
             .map(|s| s.to_ascii_uppercase() == "REPLACE")
             .unwrap_or(false);
-    let entry = match store.get(src) {
-        Some(e) => e,
+    let data = match store.get(src) {
+        Some(e) => {
+            let d = e.data.clone();
+            drop(e);
+            d
+        }
         None => return RespValue::Integer(0),
     };
     if !replace && store.exists(dst) {
         return RespValue::Integer(0);
     }
-    store.set(dst.clone(), entry.data.clone(), None);
+    store.set(dst.clone(), data, None);
     RespValue::Integer(1)
 }
 async fn cmd_object(args: &[Bytes], store: &Arc<Store>) -> RespValue {
@@ -460,17 +470,240 @@ async fn cmd_object(args: &[Bytes], store: &Arc<Store>) -> RespValue {
         _ => RespValue::Error("ERR syntax error".into()),
     }
 }
-async fn cmd_dump(args: &[Bytes], _store: &Arc<Store>) -> RespValue {
+async fn cmd_dump(args: &[Bytes], store: &Arc<Store>) -> RespValue {
     if args.is_empty() {
         return RespValue::Error("ERR wrong number of arguments for 'dump' command".into());
     }
-    RespValue::Error("ERR DUMP not supported yet".into())
+    let key = &args[0];
+    let entry = match store.get(key) {
+        Some(e) => e,
+        None => return RespValue::BulkString(None),
+    };
+    // Simple custom serialization format:
+    // type_byte | data_len (4 bytes LE) | data_bytes | ttl_ms (8 bytes LE, 0 = no expiry)
+    let mut buf = Vec::new();
+    let type_byte: u8 = match &entry.data {
+        DataType::String(_) => 0,
+        DataType::List(_) => 1,
+        DataType::Set(_) => 2,
+        DataType::ZSet(_) => 3,
+        DataType::Hash(_) => 4,
+        DataType::Stream(_) => 5,
+    };
+    buf.push(type_byte);
+    let data_bytes = match &entry.data {
+        DataType::String(s) => s.clone(),
+        DataType::List(l) => {
+            let mut v = Vec::new();
+            for item in l {
+                v.extend_from_slice(&(item.len() as u32).to_le_bytes());
+                v.extend_from_slice(item);
+            }
+            Bytes::from(v)
+        }
+        DataType::Set(s) => {
+            let mut v = Vec::new();
+            for item in s {
+                v.extend_from_slice(&(item.len() as u32).to_le_bytes());
+                v.extend_from_slice(item);
+            }
+            Bytes::from(v)
+        }
+        DataType::ZSet(z) => {
+            let mut v = Vec::new();
+            for (member, score) in &z.members {
+                v.extend_from_slice(&(member.len() as u32).to_le_bytes());
+                v.extend_from_slice(member);
+                v.extend_from_slice(&score.0.to_le_bytes());
+            }
+            Bytes::from(v)
+        }
+        DataType::Hash(h) => {
+            let mut v = Vec::new();
+            for (k, val) in h {
+                v.extend_from_slice(&(k.len() as u32).to_le_bytes());
+                v.extend_from_slice(k);
+                v.extend_from_slice(&(val.len() as u32).to_le_bytes());
+                v.extend_from_slice(val);
+            }
+            Bytes::from(v)
+        }
+        DataType::Stream(_) => Bytes::new(), // Stream serialization not yet implemented
+    };
+    buf.extend_from_slice(&(data_bytes.len() as u32).to_le_bytes());
+    buf.extend_from_slice(&data_bytes);
+    let ttl_ms: u64 = entry
+        .expires_at
+        .map(|at| {
+            at.checked_duration_since(std::time::Instant::now())
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0)
+        })
+        .unwrap_or(0);
+    buf.extend_from_slice(&ttl_ms.to_le_bytes());
+    // Append a simple 4-byte CRC-like checksum (sum of bytes mod 2^32)
+    let checksum: u32 = buf.iter().map(|b| *b as u32).sum::<u32>();
+    buf.extend_from_slice(&checksum.to_le_bytes());
+    RespValue::BulkString(Some(Bytes::from(buf)))
 }
-async fn cmd_restore(args: &[Bytes], _store: &Arc<Store>) -> RespValue {
+async fn cmd_restore(args: &[Bytes], store: &Arc<Store>) -> RespValue {
     if args.len() < 3 {
         return RespValue::Error("ERR wrong number of arguments for 'restore' command".into());
     }
-    RespValue::Error("ERR RESTORE not supported yet".into())
+    let key = args[0].clone();
+    let ttl_ms: u64 = std::str::from_utf8(&args[1])
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+    let serialized = &args[2];
+    if serialized.len() < 14 {
+        return RespValue::Error("ERR DUMP payload version or checksum are wrong".into());
+    }
+    // Verify checksum
+    let data_part = &serialized[..serialized.len() - 4];
+    let checksum_bytes = &serialized[serialized.len() - 4..];
+    let stored_checksum = u32::from_le_bytes([
+        checksum_bytes[0],
+        checksum_bytes[1],
+        checksum_bytes[2],
+        checksum_bytes[3],
+    ]);
+    let computed_checksum: u32 = data_part.iter().map(|b| *b as u32).sum::<u32>();
+    if stored_checksum != computed_checksum {
+        return RespValue::Error("ERR DUMP payload version or checksum are wrong".into());
+    }
+    let type_byte = data_part[0];
+    let data_len = u32::from_le_bytes([data_part[1], data_part[2], data_part[3], data_part[4]]) as usize;
+    if 5 + data_len + 8 > data_part.len() {
+        return RespValue::Error("ERR DUMP payload version or checksum are wrong".into());
+    }
+    let data_bytes = &data_part[5..5 + data_len];
+    let ttl_stored = u64::from_le_bytes([
+        data_part[5 + data_len],
+        data_part[5 + data_len + 1],
+        data_part[5 + data_len + 2],
+        data_part[5 + data_len + 3],
+        data_part[5 + data_len + 4],
+        data_part[5 + data_len + 5],
+        data_part[5 + data_len + 6],
+        data_part[5 + data_len + 7],
+    ]);
+    let data = match type_byte {
+        0 => DataType::String(Bytes::copy_from_slice(data_bytes)),
+        1 => {
+            let mut items = std::collections::VecDeque::new();
+            let mut offset = 0;
+            while offset + 4 <= data_bytes.len() {
+                let len = u32::from_le_bytes([
+                    data_bytes[offset],
+                    data_bytes[offset + 1],
+                    data_bytes[offset + 2],
+                    data_bytes[offset + 3],
+                ]) as usize;
+                offset += 4;
+                if offset + len > data_bytes.len() {
+                    break;
+                }
+                items.push_back(Bytes::copy_from_slice(&data_bytes[offset..offset + len]));
+                offset += len;
+            }
+            DataType::List(items)
+        }
+        2 => {
+            let mut items = std::collections::HashSet::new();
+            let mut offset = 0;
+            while offset + 4 <= data_bytes.len() {
+                let len = u32::from_le_bytes([
+                    data_bytes[offset],
+                    data_bytes[offset + 1],
+                    data_bytes[offset + 2],
+                    data_bytes[offset + 3],
+                ]) as usize;
+                offset += 4;
+                if offset + len > data_bytes.len() {
+                    break;
+                }
+                items.insert(Bytes::copy_from_slice(&data_bytes[offset..offset + len]));
+                offset += len;
+            }
+            DataType::Set(items)
+        }
+        3 => {
+            let mut zset = valkey_storage::ZSetData::new();
+            let mut offset = 0;
+            while offset + 4 <= data_bytes.len() {
+                let len = u32::from_le_bytes([
+                    data_bytes[offset],
+                    data_bytes[offset + 1],
+                    data_bytes[offset + 2],
+                    data_bytes[offset + 3],
+                ]) as usize;
+                offset += 4;
+                if offset + len + 8 > data_bytes.len() {
+                    break;
+                }
+                let member = Bytes::copy_from_slice(&data_bytes[offset..offset + len]);
+                offset += len;
+                let score = f64::from_le_bytes([
+                    data_bytes[offset],
+                    data_bytes[offset + 1],
+                    data_bytes[offset + 2],
+                    data_bytes[offset + 3],
+                    data_bytes[offset + 4],
+                    data_bytes[offset + 5],
+                    data_bytes[offset + 6],
+                    data_bytes[offset + 7],
+                ]);
+                offset += 8;
+                zset.add(member, score);
+            }
+            DataType::ZSet(zset)
+        }
+        4 => {
+            let mut map = std::collections::HashMap::new();
+            let mut offset = 0;
+            while offset + 4 <= data_bytes.len() {
+                let klen = u32::from_le_bytes([
+                    data_bytes[offset],
+                    data_bytes[offset + 1],
+                    data_bytes[offset + 2],
+                    data_bytes[offset + 3],
+                ]) as usize;
+                offset += 4;
+                if offset + klen + 4 > data_bytes.len() {
+                    break;
+                }
+                let k = Bytes::copy_from_slice(&data_bytes[offset..offset + klen]);
+                offset += klen;
+                let vlen = u32::from_le_bytes([
+                    data_bytes[offset],
+                    data_bytes[offset + 1],
+                    data_bytes[offset + 2],
+                    data_bytes[offset + 3],
+                ]) as usize;
+                offset += 4;
+                if offset + vlen > data_bytes.len() {
+                    break;
+                }
+                let v = Bytes::copy_from_slice(&data_bytes[offset..offset + vlen]);
+                offset += vlen;
+                map.insert(k, v);
+            }
+            DataType::Hash(map)
+        }
+        5 => DataType::Stream(valkey_storage::StreamData::new()),
+        _ => return RespValue::Error("ERR DUMP payload version or checksum are wrong".into()),
+    };
+    // Use the TTL from the serialized data if the user passed 0, otherwise use user's TTL
+    let effective_ttl = if ttl_ms > 0 {
+        Some(std::time::Duration::from_millis(ttl_ms))
+    } else if ttl_stored > 0 {
+        Some(std::time::Duration::from_millis(ttl_stored))
+    } else {
+        None
+    };
+    store.set(key, data, effective_ttl);
+    RespValue::ok()
 }
 async fn cmd_wait(args: &[Bytes], _store: &Arc<Store>) -> RespValue {
     if args.len() < 2 {
@@ -580,6 +813,180 @@ async fn cmd_unlink(args: &[Bytes], store: &Arc<Store>) -> RespValue {
         return RespValue::Error("ERR wrong number of arguments for 'unlink' command".into());
     }
     RespValue::Integer(args.iter().filter(|k| store.del(k)).count() as i64)
+}
+
+// EXPIRETIME key — returns the absolute Unix timestamp (in seconds) at which the key will expire.
+async fn cmd_expiretime(args: &[Bytes], store: &Arc<Store>) -> RespValue {
+    if args.len() != 1 {
+        return RespValue::Error("ERR wrong number of arguments for 'expiretime' command".into());
+    }
+    let key = &args[0];
+    if !store.exists(key) {
+        return RespValue::Integer(-2);
+    }
+    match store.ttl(key) {
+        Some(d) => {
+            let now_secs = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs() as i64;
+            RespValue::Integer(now_secs + d.as_secs() as i64)
+        }
+        None => RespValue::Integer(-1),
+    }
+}
+
+// PEXPIRETIME key — returns the absolute Unix timestamp (in milliseconds) at which the key will expire.
+async fn cmd_pexpiretime(args: &[Bytes], store: &Arc<Store>) -> RespValue {
+    if args.len() != 1 {
+        return RespValue::Error("ERR wrong number of arguments for 'pexpiretime' command".into());
+    }
+    let key = &args[0];
+    if !store.exists(key) {
+        return RespValue::Integer(-2);
+    }
+    match store.ttl(key) {
+        Some(d) => {
+            let now_ms = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as i64;
+            RespValue::Integer(now_ms + d.as_millis() as i64)
+        }
+        None => RespValue::Integer(-1),
+    }
+}
+
+// SORT_RO key [BY pattern] [LIMIT offset count] [GET pattern [GET pattern ...]] [ASC|DESC] [ALPHA]
+// Read-only variant of SORT — identical to SORT but refuses STORE.
+async fn cmd_sort_ro(args: &[Bytes], store: &Arc<Store>) -> RespValue {
+    if args.is_empty() {
+        return RespValue::Error("ERR wrong number of arguments for 'sort_ro' command".into());
+    }
+    // Reuse the same parsing logic as SORT but reject STORE.
+    let key = &args[0];
+    let mut limit = None;
+    let mut order = SortOrder::Asc;
+    let mut alpha = false;
+    let mut i = 1;
+    while i < args.len() {
+        match std::str::from_utf8(&args[i])
+            .ok()
+            .map(|s| s.to_ascii_uppercase())
+            .unwrap_or_default()
+            .as_str()
+        {
+            "LIMIT" => {
+                i += 1;
+                if i + 1 < args.len() {
+                    limit = Some((
+                        std::str::from_utf8(&args[i])
+                            .ok()
+                            .and_then(|s| s.parse().ok())
+                            .unwrap_or(0),
+                        std::str::from_utf8(&args[i + 1])
+                            .ok()
+                            .and_then(|s| s.parse().ok())
+                            .unwrap_or(0),
+                    ));
+                    i += 1;
+                }
+            }
+            "ASC" => order = SortOrder::Asc,
+            "DESC" => order = SortOrder::Desc,
+            "ALPHA" => alpha = true,
+            "STORE" => return RespValue::Error("ERR SORT_RO does not support STORE".into()),
+            _ => {}
+        }
+        i += 1;
+    }
+    let mut items: Vec<Bytes> = match store.get(key) {
+        Some(e) => match &e.data {
+            DataType::List(l) => l.iter().cloned().collect(),
+            DataType::Set(s) => s.iter().cloned().collect(),
+            DataType::ZSet(z) => z.members.keys().cloned().collect(),
+            _ => return RespValue::Error("WRONGTYPE".into()),
+        },
+        None => return RespValue::Array(None),
+    };
+    if alpha {
+        let mut v: Vec<_> = items
+            .into_iter()
+            .map(|b| (String::from_utf8_lossy(&b).into_owned(), b))
+            .collect();
+        v.sort_by(|a, b| a.0.cmp(&b.0));
+        if order == SortOrder::Desc {
+            v.reverse();
+        }
+        items = v.into_iter().map(|(_, b)| b).collect();
+    } else {
+        let mut v: Vec<_> = items
+            .into_iter()
+            .map(|b| (String::from_utf8_lossy(&b).parse::<f64>().unwrap_or(0.0), b))
+            .collect();
+        v.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+        if order == SortOrder::Desc {
+            v.reverse();
+        }
+        items = v.into_iter().map(|(_, b)| b).collect();
+    }
+    if let Some((off, cnt)) = limit {
+        let s = off.min(items.len());
+        let e = (off + cnt).min(items.len());
+        items = items[s..e].to_vec();
+    }
+    RespValue::Array(Some(
+        items
+            .into_iter()
+            .map(|b| RespValue::BulkString(Some(b)))
+            .collect(),
+    ))
+}
+
+// SUBSTR key start end — legacy alias for GETRANGE
+async fn cmd_substr(args: &[Bytes], store: &Arc<Store>) -> RespValue {
+    // Delegate to the same logic as GETRANGE via the string module would be ideal,
+    // but to avoid cross-module duplication we replicate the logic here.
+    if args.len() != 3 {
+        return RespValue::Error("ERR wrong number of arguments for 'substr' command".into());
+    }
+    let start: i64 = std::str::from_utf8(&args[1])
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+    let end: i64 = std::str::from_utf8(&args[2])
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+    fn normalize_index(index: i64, len: i64) -> i64 {
+        if index < 0 {
+            let idx = len + index;
+            if idx < 0 { 0 } else { idx }
+        } else {
+            index
+        }
+    }
+    match store.get(&args[0]) {
+        Some(entry) => match &entry.data {
+            DataType::String(s) => {
+                let len = s.len() as i64;
+                if len == 0 {
+                    return RespValue::BulkString(Some(Bytes::new()));
+                }
+                let si = normalize_index(start, len);
+                let ei = normalize_index(end, len);
+                if si > ei || si >= len {
+                    return RespValue::BulkString(Some(Bytes::new()));
+                }
+                let ei = ei.min(len - 1);
+                RespValue::BulkString(Some(Bytes::copy_from_slice(&s[si as usize..=ei as usize])))
+            }
+            _ => RespValue::Error(
+                "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
+            ),
+        },
+        None => RespValue::BulkString(Some(Bytes::new())),
+    }
 }
 #[cfg(test)]
 mod tests {
@@ -719,6 +1126,166 @@ mod tests {
         assert_eq!(
             handle(&[Bytes::from("EXISTS"), Bytes::from("a")], &s).await,
             RespValue::Integer(1)
+        );
+    }
+    #[tokio::test]
+    async fn t_expiretime() {
+        let s = st();
+        s.set(Bytes::from("k"), DataType::String(Bytes::from("v")), None);
+        cmd_expire(&[Bytes::from("k"), Bytes::from("60")], &s).await;
+        match cmd_expiretime(&[Bytes::from("k")], &s).await {
+            RespValue::Integer(ts) => {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs() as i64;
+                assert!(ts > now && ts <= now + 60);
+            }
+            _ => panic!("expected integer response"),
+        }
+    }
+    #[tokio::test]
+    async fn t_expiretime_missing() {
+        let s = st();
+        assert_eq!(
+            cmd_expiretime(&[Bytes::from("missing")], &s).await,
+            RespValue::Integer(-2)
+        );
+    }
+    #[tokio::test]
+    async fn t_expiretime_no_ttl() {
+        let s = st();
+        s.set(Bytes::from("k"), DataType::String(Bytes::from("v")), None);
+        assert_eq!(
+            cmd_expiretime(&[Bytes::from("k")], &s).await,
+            RespValue::Integer(-1)
+        );
+    }
+    #[tokio::test]
+    async fn t_pexpiretime() {
+        let s = st();
+        s.set(Bytes::from("k"), DataType::String(Bytes::from("v")), None);
+        cmd_pexpire(&[Bytes::from("k"), Bytes::from("60000")], &s).await;
+        match cmd_pexpiretime(&[Bytes::from("k")], &s).await {
+            RespValue::Integer(ts) => {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis() as i64;
+                assert!(ts > now && ts <= now + 60000);
+            }
+            _ => panic!("expected integer response"),
+        }
+    }
+    #[tokio::test]
+    async fn t_sort_ro() {
+        let s = st();
+        let mut l = std::collections::VecDeque::new();
+        l.push_back(Bytes::from("3"));
+        l.push_back(Bytes::from("1"));
+        l.push_back(Bytes::from("2"));
+        s.set(Bytes::from("nums"), DataType::List(l), None);
+        match cmd_sort_ro(&[Bytes::from("nums")], &s).await {
+            RespValue::Array(Some(items)) => {
+                assert_eq!(items.len(), 3);
+                assert_eq!(items[0], RespValue::BulkString(Some(Bytes::from("1"))));
+            }
+            _ => panic!("expected array"),
+        }
+    }
+    #[tokio::test]
+    async fn t_sort_ro_store_rejected() {
+        let s = st();
+        let mut l = std::collections::VecDeque::new();
+        l.push_back(Bytes::from("1"));
+        s.set(Bytes::from("nums"), DataType::List(l), None);
+        let result = cmd_sort_ro(
+            &[
+                Bytes::from("nums"),
+                Bytes::from("STORE"),
+                Bytes::from("dest"),
+            ],
+            &s,
+        )
+        .await;
+        assert!(matches!(result, RespValue::Error(_)));
+    }
+    #[tokio::test]
+    async fn t_substr() {
+        let s = st();
+        s.set(
+            Bytes::from("k"),
+            DataType::String(Bytes::from("Hello World")),
+            None,
+        );
+        assert_eq!(
+            cmd_substr(&[Bytes::from("k"), Bytes::from("0"), Bytes::from("4")], &s).await,
+            RespValue::BulkString(Some(Bytes::from("Hello")))
+        );
+        assert_eq!(
+            cmd_substr(&[Bytes::from("k"), Bytes::from("-5"), Bytes::from("-1")], &s).await,
+            RespValue::BulkString(Some(Bytes::from("World")))
+        );
+    }
+    #[tokio::test]
+    async fn t_dump_restore_string() {
+        let s = st();
+        s.set(
+            Bytes::from("src"),
+            DataType::String(Bytes::from("hello")),
+            None,
+        );
+        let dumped = match cmd_dump(&[Bytes::from("src")], &s).await {
+            RespValue::BulkString(Some(b)) => b,
+            _ => panic!("expected bulk string from DUMP"),
+        };
+        assert!(dumped.len() > 0);
+        // Restore to a new key with 0 TTL (keeps original TTL)
+        let result = cmd_restore(
+            &[Bytes::from("dst"), Bytes::from("0"), dumped],
+            &s,
+        )
+        .await;
+        assert_eq!(result, RespValue::ok());
+        let val = s.get(&Bytes::from("dst")).unwrap();
+        match &val.data {
+            DataType::String(v) => assert_eq!(v, &Bytes::from("hello")),
+            _ => panic!("expected string"),
+        };
+    }
+    #[tokio::test]
+    async fn t_dump_restore_list() {
+        let s = st();
+        let mut l = std::collections::VecDeque::new();
+        l.push_back(Bytes::from("a"));
+        l.push_back(Bytes::from("b"));
+        s.set(Bytes::from("mylist"), DataType::List(l), None);
+        let dumped = match cmd_dump(&[Bytes::from("mylist")], &s).await {
+            RespValue::BulkString(Some(b)) => b,
+            _ => panic!("expected bulk string from DUMP"),
+        };
+        let result = cmd_restore(
+            &[Bytes::from("mylist2"), Bytes::from("0"), dumped],
+            &s,
+        )
+        .await;
+        assert_eq!(result, RespValue::ok());
+        let val = s.get(&Bytes::from("mylist2")).unwrap();
+        match &val.data {
+            DataType::List(items) => {
+                assert_eq!(items.len(), 2);
+                assert_eq!(items[0], Bytes::from("a"));
+                assert_eq!(items[1], Bytes::from("b"));
+            }
+            _ => panic!("expected list"),
+        };
+    }
+    #[tokio::test]
+    async fn t_dump_missing() {
+        let s = st();
+        assert_eq!(
+            cmd_dump(&[Bytes::from("nokey")], &s).await,
+            RespValue::BulkString(None)
         );
     }
 }

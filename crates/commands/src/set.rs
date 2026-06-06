@@ -743,6 +743,96 @@ pub fn sscan(store: &Arc<Store>, args: &[Bytes]) -> RespValue {
 }
 
 // ---------------------------------------------------------------------------
+// SINTERCARD numkeys key [key ...] [LIMIT limit]
+// Returns the cardinality (number of elements) of the intersection of sets.
+// Like SINTER but returns count only, not the actual members.
+// ---------------------------------------------------------------------------
+pub fn sintercard(store: &Arc<Store>, args: &[Bytes]) -> RespValue {
+    if args.len() < 2 {
+        return RespValue::Error("ERR wrong number of arguments for 'sintercard' command".into());
+    }
+    let numkeys: usize = match std::str::from_utf8(&args[0])
+        .ok()
+        .and_then(|s| s.parse().ok())
+    {
+        Some(n) => n,
+        None => {
+            return RespValue::Error("ERR value is not an integer or out of range".into());
+        }
+    };
+    if numkeys == 0 {
+        return RespValue::Error("ERR value is not an integer or out of range".into());
+    }
+    if args.len() < 1 + numkeys {
+        return RespValue::Error("ERR wrong number of arguments for 'sintercard' command".into());
+    }
+    let keys = &args[1..1 + numkeys];
+    let mut limit: Option<usize> = None;
+    let mut i = 1 + numkeys;
+    while i < args.len() {
+        match std::str::from_utf8(&args[i])
+            .ok()
+            .map(|s| s.to_ascii_uppercase())
+            .unwrap_or_default()
+            .as_str()
+        {
+            "LIMIT" => {
+                i += 1;
+                if i < args.len() {
+                    limit = std::str::from_utf8(&args[i])
+                        .ok()
+                        .and_then(|s| s.parse().ok());
+                    i += 1;
+                }
+            }
+            _ => return RespValue::Error("ERR syntax error".into()),
+        }
+    }
+    let mut sets: Vec<HashSet<Bytes>> = Vec::new();
+    for key in keys {
+        if let Some(entry) = store.get(key) {
+            match &entry.data {
+                DataType::Set(s) => sets.push(s.clone()),
+                _ => {
+                    return RespValue::Error(
+                        "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
+                    );
+                }
+            }
+        } else {
+            return RespValue::Integer(0);
+        }
+    }
+    if sets.is_empty() {
+        return RespValue::Integer(0);
+    }
+    let min_idx = sets
+        .iter()
+        .enumerate()
+        .min_by_key(|(_, s)| s.len())
+        .map(|(i, _)| i)
+        .unwrap_or(0);
+    let mut count: usize = 0;
+    'outer: for candidate in &sets[min_idx] {
+        for (i, s) in sets.iter().enumerate() {
+            if i == min_idx {
+                continue;
+            }
+            if !s.contains(candidate) {
+                continue 'outer;
+            }
+        }
+        count += 1;
+        if let Some(lim) = limit {
+            if count >= lim {
+                break;
+            }
+        }
+    }
+    RespValue::Integer(count as i64)
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 fn bulk(b: Bytes) -> RespValue {
@@ -1260,6 +1350,44 @@ mod tests {
         let result = sscan(&store, &[b("mykey"), b("0")]);
         assert!(matches!(result, RespValue::Error(_)));
     }
+    #[tokio::test]
+    async fn test_sintercard_basic() {
+        let store = test_store();
+        sadd(&store, &[b("s1"), b("a"), b("b"), b("c")]);
+        sadd(&store, &[b("s2"), b("b"), b("c"), b("d")]);
+        let result = sintercard(&store, &[b("2"), b("s1"), b("s2")]);
+        assert_eq!(result, RespValue::Integer(2));
+    }
+    #[tokio::test]
+    async fn test_sintercard_no_overlap() {
+        let store = test_store();
+        sadd(&store, &[b("s1"), b("a"), b("b")]);
+        sadd(&store, &[b("s2"), b("c"), b("d")]);
+        let result = sintercard(&store, &[b("2"), b("s1"), b("s2")]);
+        assert_eq!(result, RespValue::Integer(0));
+    }
+    #[tokio::test]
+    async fn test_sintercard_with_limit() {
+        let store = test_store();
+        sadd(&store, &[b("s1"), b("a"), b("b"), b("c")]);
+        sadd(&store, &[b("s2"), b("a"), b("b"), b("c")]);
+        let result = sintercard(&store, &[b("2"), b("s1"), b("s2"), b("LIMIT"), b("1")]);
+        assert_eq!(result, RespValue::Integer(1));
+    }
+    #[tokio::test]
+    async fn test_sintercard_missing_key() {
+        let store = test_store();
+        sadd(&store, &[b("s1"), b("a")]);
+        let result = sintercard(&store, &[b("2"), b("s1"), b("s2")]);
+        assert_eq!(result, RespValue::Integer(0));
+    }
+    #[tokio::test]
+    async fn test_sintercard_single_key() {
+        let store = test_store();
+        sadd(&store, &[b("s1"), b("a"), b("b"), b("c")]);
+        let result = sintercard(&store, &[b("1"), b("s1")]);
+        assert_eq!(result, RespValue::Integer(3));
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1292,6 +1420,7 @@ pub fn handle(cmd: &[Bytes], store: &Arc<Store>) -> RespValue {
         "SINTERSTORE" => sinterstore(store, args),
         "SDIFFSTORE" => sdiffstore(store, args),
         "SSCAN" => sscan(store, args),
+        "SINTERCARD" => sintercard(store, args),
         _ => RespValue::Error(format!("ERR unknown command '{}'", name).into()),
     }
 }

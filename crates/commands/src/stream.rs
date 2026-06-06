@@ -165,10 +165,17 @@ pub fn xinfo(db:&Db,args:&[Bytes])->Result<RespValue,String> {
     if args.len()<2 { return Err("ERR wrong number of arguments for 'xinfo' command".into()); }
     let sub=s(&args[0])?.to_ascii_uppercase(); let key=&args[1];
     match sub.as_str() {
-        "STREAM"=>xinfo_stream(db,key),
-        "GROUPS"=>xinfo_groups(db,key),
-        "CONSUMERS"=>{ if args.len()<3 { return Err("ERR wrong number of arguments".into()); } xinfo_consumers(db,key,&args[2]) }
-        _=>Err("ERR syntax error".into()),
+        "STREAM" => {
+            let full = args.len() > 2 && s(&args[2])?.to_ascii_uppercase() == "FULL";
+            if full {
+                xinfo_stream_full(db, key)
+            } else {
+                xinfo_stream(db, key)
+            }
+        }
+        "GROUPS" => xinfo_groups(db,key),
+        "CONSUMERS" => { if args.len()<3 { return Err("ERR wrong number of arguments".into()); } xinfo_consumers(db,key,&args[2]) }
+        _ => Err("ERR syntax error".into()),
     }
 }
 
@@ -184,6 +191,98 @@ fn xinfo_stream(db:&Db,key:&Bytes)->Result<RespValue,String> {
                 RespValue::BulkString(Some(Bytes::from("first-entry"))), if fi.is_empty() { RespValue::BulkString(None) } else { RespValue::Array(vec![RespValue::BulkString(Some(Bytes::from(fi))), RespValue::Array(vec![])]) },
                 RespValue::BulkString(Some(Bytes::from("last-entry"))), if li.is_empty() { RespValue::BulkString(None) } else { RespValue::Array(vec![RespValue::BulkString(Some(Bytes::from(li))), RespValue::Array(vec![])]) },
                 RespValue::BulkString(Some(Bytes::from("groups"))), RespValue::BulkString(Some(Bytes::from(sd.groups.len().to_string()))),
+            ]))
+        }
+        _=>Err("WRONGTYPE Operation against a key holding the wrong kind of value".into()),
+    }
+}
+
+/// XINFO STREAM key FULL — returns extended stream info including full entries and group details.
+fn xinfo_stream_full(db:&Db,key:&Bytes)->Result<RespValue,String> {
+    let entry=db.get(key).ok_or("ERR no such key")?;
+    match &entry.data {
+        DataType::Stream(sd)=>{
+            let len = RespValue::BulkString(Some(Bytes::from(sd.entries.len().to_string())));
+            let last_gen_id = RespValue::BulkString(Some(Bytes::from(format!("{}-{}",sd.last_id.ms,sd.last_id.seq))));
+
+            // first-entry: full entry with fields
+            let first_entry = if let Some((sid, fields)) = sd.entries.iter().next() {
+                RespValue::Array(vec![
+                    RespValue::BulkString(Some(Bytes::from(format!("{}-{}", sid.ms, sid.seq)))),
+                    RespValue::Array(enc_fields(fields)),
+                ])
+            } else {
+                RespValue::BulkString(None)
+            };
+
+            // last-entry: full entry with fields
+            let last_entry = if let Some((sid, fields)) = sd.entries.iter().next_back() {
+                RespValue::Array(vec![
+                    RespValue::BulkString(Some(Bytes::from(format!("{}-{}", sid.ms, sid.seq)))),
+                    RespValue::Array(enc_fields(fields)),
+                ])
+            } else {
+                RespValue::BulkString(None)
+            };
+
+            // groups: full group info with consumers and pending entries
+            let mut groups_info = Vec::new();
+            for (gname, group) in &sd.groups {
+                // consumers in this group
+                let mut consumers_info = Vec::new();
+                for (cname, consumer) in &group.consumers {
+                    let pending_info: Vec<RespValue> = consumer.pending.iter().flat_map(|pe| {
+                        let pe_id: &StreamId = pe.0;
+                        vec![
+                            RespValue::BulkString(Some(Bytes::from(format!("{}-{}", pe_id.ms, pe_id.seq)))),
+                            RespValue::BulkString(Some(Bytes::from(pe.1.clone()))),
+                        ]
+                    }).collect();
+                    consumers_info.push(RespValue::Array(vec![
+                        RespValue::BulkString(Some(Bytes::from("name"))), RespValue::BulkString(Some(Bytes::from(cname.clone()))),
+                        RespValue::BulkString(Some(Bytes::from("seen-time"))), RespValue::BulkString(Some(Bytes::from(consumer.seen_time.elapsed().as_millis().to_string()))),
+                        RespValue::BulkString(Some(Bytes::from("pel-count"))), RespValue::BulkString(Some(Bytes::from(consumer.pending.len().to_string()))),
+                        RespValue::BulkString(Some(Bytes::from("consumer-pending"))), RespValue::Array(pending_info),
+                    ]));
+                }
+
+                // pending entries for the entire group
+                let pending_entries: Vec<RespValue> = group.pending.iter().map(|(sid, pe)| {
+                    RespValue::Array(vec![
+                        RespValue::BulkString(Some(Bytes::from(format!("{}-{}", sid.ms, sid.seq)))),
+                        RespValue::BulkString(Some(Bytes::from(pe.consumer.clone()))),
+                        RespValue::BulkString(Some(Bytes::from(pe.delivered_at.elapsed().as_millis().to_string()))),
+                        RespValue::BulkString(Some(Bytes::from(pe.delivery_count.to_string()))),
+                    ])
+                }).collect();
+
+                groups_info.push(RespValue::Array(vec![
+                    RespValue::BulkString(Some(Bytes::from("name"))), RespValue::BulkString(Some(Bytes::from(gname.clone()))),
+                    RespValue::BulkString(Some(Bytes::from("last-delivered-id"))), RespValue::BulkString(Some(Bytes::from(format!("{}-{}", group.last_delivered_id.ms, group.last_delivered_id.seq)))),
+                    RespValue::BulkString(Some(Bytes::from("entries-read"))), RespValue::BulkString(Some(Bytes::from(group.entries_read.to_string()))),
+                    RespValue::BulkString(Some(Bytes::from("pel-count"))), RespValue::BulkString(Some(Bytes::from(group.pending.len().to_string()))),
+                    RespValue::BulkString(Some(Bytes::from("pending"))), RespValue::Array(pending_entries),
+                    RespValue::BulkString(Some(Bytes::from("consumers"))), RespValue::Array(consumers_info),
+                ]));
+            }
+
+            // entries: all entries in the stream (FULL shows all, not just first/last)
+            let entries: Vec<RespValue> = sd.entries.iter().map(|(sid, fields)| {
+                RespValue::Array(vec![
+                    RespValue::BulkString(Some(Bytes::from(format!("{}-{}", sid.ms, sid.seq)))),
+                    RespValue::Array(enc_fields(fields)),
+                ])
+            }).collect();
+
+            Ok(RespValue::Array(vec![
+                RespValue::BulkString(Some(Bytes::from("length"))), len,
+                RespValue::BulkString(Some(Bytes::from("last-generated-id"))), last_gen_id,
+                RespValue::BulkString(Some(Bytes::from("max-deleted-entry-id"))), RespValue::BulkString(Some(Bytes::from("0-0"))),
+                RespValue::BulkString(Some(Bytes::from("entries-added"))), RespValue::BulkString(Some(Bytes::from(sd.entries.len().to_string()))),
+                RespValue::BulkString(Some(Bytes::from("first-entry"))), first_entry,
+                RespValue::BulkString(Some(Bytes::from("last-entry"))), last_entry,
+                RespValue::BulkString(Some(Bytes::from("entries"))), RespValue::Array(entries),
+                RespValue::BulkString(Some(Bytes::from("groups"))), RespValue::Array(groups_info),
             ]))
         }
         _=>Err("WRONGTYPE Operation against a key holding the wrong kind of value".into()),

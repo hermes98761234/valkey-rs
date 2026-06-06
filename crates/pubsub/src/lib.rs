@@ -11,6 +11,8 @@ pub struct PubSubHub {
     channels: DashMap<Bytes, broadcast::Sender<Bytes>>,
     /// pattern -> broadcast sender (carries (channel, message))
     patterns: DashMap<Bytes, broadcast::Sender<(Bytes, Bytes)>>,
+    /// shard_channel_name -> broadcast sender (carries (channel, message))
+    shard_channels: DashMap<Bytes, broadcast::Sender<(Bytes, Bytes)>>,
     /// Tracks number of active pattern subscriptions (across all clients)
     pattern_sub_count: std::sync::atomic::AtomicUsize,
 }
@@ -20,6 +22,7 @@ impl PubSubHub {
         Arc::new(Self {
             channels: DashMap::new(),
             patterns: DashMap::new(),
+            shard_channels: DashMap::new(),
             pattern_sub_count: std::sync::atomic::AtomicUsize::new(0),
         })
     }
@@ -104,6 +107,57 @@ impl PubSubHub {
             .map(|ch| {
                 let count = self
                     .channels
+                    .get(ch)
+                    .map(|tx| tx.receiver_count() as i64)
+                    .unwrap_or(0);
+                (ch.clone(), count)
+            })
+            .collect()
+    }
+
+    /// Publish a message to a shard channel. Returns the number of subscribers.
+    pub fn spublish(&self, channel: &Bytes, message: Bytes) -> i64 {
+        let mut count: i64 = 0;
+        if let Some(tx) = self.shard_channels.get(channel) {
+            count = tx.receiver_count() as i64;
+            let _ = tx.send((channel.clone(), message));
+        }
+        count
+    }
+
+    /// Subscribe to a shard channel. Returns a receiver that gets (channel, message) tuples.
+    pub fn ssubscribe(&self, channel: Bytes) -> broadcast::Receiver<(Bytes, Bytes)> {
+        self.shard_channels
+            .entry(channel)
+            .or_insert_with(|| broadcast::channel(1024).0)
+            .subscribe()
+    }
+
+    /// List active shard channels (those with at least one subscriber), optionally filtered by pattern.
+    pub fn shard_channels(&self, pattern: Option<&Bytes>) -> Vec<Bytes> {
+        let mut result = Vec::new();
+        for entry in self.shard_channels.iter() {
+            let (ch, tx) = entry.pair();
+            if tx.receiver_count() > 0 {
+                if let Some(pat) = pattern {
+                    if Self::matches_pattern(pat, ch) {
+                        result.push(ch.clone());
+                    }
+                } else {
+                    result.push(ch.clone());
+                }
+            }
+        }
+        result
+    }
+
+    /// Get subscriber counts for the given shard channels.
+    pub fn shard_numsub(&self, channels: &[Bytes]) -> Vec<(Bytes, i64)> {
+        channels
+            .iter()
+            .map(|ch| {
+                let count = self
+                    .shard_channels
                     .get(ch)
                     .map(|tx| tx.receiver_count() as i64)
                     .unwrap_or(0);

@@ -169,12 +169,27 @@ fn cmd_pubsub_numpat(_args: &[Bytes], ctx: &PubSubCtx) -> RespValue {
     RespValue::int(ctx.hub.numpat() as i64)
 }
 
-fn cmd_pubsub_shardchannels(_args: &[Bytes], _ctx: &PubSubCtx) -> RespValue {
-    RespValue::array(vec![])
+fn cmd_pubsub_shardchannels(args: &[Bytes], ctx: &PubSubCtx) -> RespValue {
+    let pattern = if args.is_empty() {
+        None
+    } else {
+        Some(args[0].clone())
+    };
+    let channels = ctx.hub.shard_channels(pattern.as_ref());
+    RespValue::array(channels.into_iter().map(|ch| RespValue::bulk(ch)).collect())
 }
 
-fn cmd_pubsub_shardnumsub(_args: &[Bytes], _ctx: &PubSubCtx) -> RespValue {
-    RespValue::array(vec![])
+fn cmd_pubsub_shardnumsub(args: &[Bytes], ctx: &PubSubCtx) -> RespValue {
+    if args.is_empty() {
+        return RespValue::array(vec![]);
+    }
+    let counts = ctx.hub.shard_numsub(args);
+    let mut result = Vec::new();
+    for (channel, count) in counts {
+        result.push(RespValue::bulk(channel));
+        result.push(RespValue::int(count));
+    }
+    RespValue::array(result)
 }
 
 fn cmd_pubsub_help() -> RespValue {
@@ -196,20 +211,60 @@ fn cmd_pubsub_help() -> RespValue {
     ])
 }
 
-/// Handle SSUBSCRIBE (Shard Subscribe) - stub for cluster mode.
-pub fn cmd_ssubscribe(args: &[Bytes], _ctx: &PubSubCtx) -> RespValue {
+/// Handle SPUBLISH (Shard Publish) command.
+pub fn cmd_spublish(args: &[Bytes], ctx: &PubSubCtx) -> RespValue {
+    if args.len() < 2 {
+        return RespValue::Error("ERR wrong number of arguments for 'spublish' command".into());
+    }
+    let channel = &args[0];
+    let message = args[1].clone();
+    let count = ctx.hub.spublish(channel, message);
+    RespValue::int(count)
+}
+
+/// Handle SSUBSCRIBE (Shard Subscribe) command.
+pub fn cmd_ssubscribe(args: &[Bytes], ctx: &PubSubCtx) -> RespValue {
     if args.is_empty() {
         return RespValue::Error("ERR wrong number of arguments for 'ssubscribe' command".into());
     }
-    RespValue::Error("ERR Cluster mode not implemented".into())
+    let mut results = Vec::new();
+    for channel in args {
+        results.push(RespValue::array(vec![
+            RespValue::bulk(Bytes::from("ssubscribe")),
+            RespValue::bulk(channel.clone()),
+            RespValue::int(1),
+        ]));
+    }
+    if results.len() == 1 {
+        results.into_iter().next().unwrap()
+    } else {
+        RespValue::Array(Some(results))
+    }
 }
 
-/// Handle SUNSUBSCRIBE (Shard Unsubscribe) - stub for cluster mode.
+/// Handle SUNSUBSCRIBE (Shard Unsubscribe) command.
 pub fn cmd_sunsubscribe(args: &[Bytes], _ctx: &PubSubCtx) -> RespValue {
+    let mut results = Vec::new();
     if args.is_empty() {
-        return RespValue::Error("ERR wrong number of arguments for 'sunsubscribe' command".into());
+        results.push(RespValue::array(vec![
+            RespValue::bulk(Bytes::from("sunsubscribe")),
+            RespValue::null_bulk(),
+            RespValue::int(0),
+        ]));
+    } else {
+        for channel in args {
+            results.push(RespValue::array(vec![
+                RespValue::bulk(Bytes::from("sunsubscribe")),
+                RespValue::bulk(channel.clone()),
+                RespValue::int(0),
+            ]));
+        }
     }
-    RespValue::Error("ERR Cluster mode not implemented".into())
+    if results.len() == 1 {
+        results.into_iter().next().unwrap()
+    } else {
+        RespValue::Array(Some(results))
+    }
 }
 
 #[cfg(test)]

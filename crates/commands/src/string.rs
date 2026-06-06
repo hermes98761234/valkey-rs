@@ -524,7 +524,8 @@ async fn cmd_psetex(args: &[Bytes], store: &Arc<Store>) -> RespValue {
 }
 
 async fn cmd_getex(args: &[Bytes], store: &Arc<Store>) -> RespValue {
-    if args.is_empty() || args.len() > 2 {
+    // GETEX key [EX seconds|PX milliseconds|EXAT timestamp|PXAT milliseconds-timestamp|KEEPTTL|PERSIST]
+    if args.is_empty() || args.len() > 3 {
         return RespValue::Error("ERR wrong number of arguments for 'getex' command".into());
     }
     let key = &args[0];
@@ -539,7 +540,9 @@ async fn cmd_getex(args: &[Bytes], store: &Arc<Store>) -> RespValue {
         },
         None => return null_bulk(),
     }
-    if args.len() == 2 {
+    // Parse the optional expiry argument
+    let mut new_ttl: Option<Duration> = None;
+    if args.len() >= 2 {
         let opt = match std::str::from_utf8(&args[1]) {
             Ok(s) => s.to_ascii_uppercase(),
             Err(_) => return RespValue::Error("ERR syntax error".into()),
@@ -551,14 +554,85 @@ async fn cmd_getex(args: &[Bytes], store: &Arc<Store>) -> RespValue {
                     entry.expires_at = None;
                 }
             }
+            "KEEPTTL" => {
+                // No-op: keep existing TTL
+            }
+            "EX" => {
+                if args.len() < 3 {
+                    return RespValue::Error("ERR syntax error".into());
+                }
+                let secs: u64 = std::str::from_utf8(&args[2])
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(0);
+                new_ttl = Some(Duration::from_secs(secs));
+            }
+            "PX" => {
+                if args.len() < 3 {
+                    return RespValue::Error("ERR syntax error".into());
+                }
+                let ms: u64 = std::str::from_utf8(&args[2])
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(0);
+                new_ttl = Some(Duration::from_millis(ms));
+            }
+            "EXAT" => {
+                if args.len() < 3 {
+                    return RespValue::Error("ERR syntax error".into());
+                }
+                let ts: u64 = std::str::from_utf8(&args[2])
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(0);
+                let now_secs = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs();
+                if ts > now_secs {
+                    new_ttl = Some(Duration::from_secs(ts - now_secs));
+                } else {
+                    store.del(key);
+                    return null_bulk();
+                }
+            }
+            "PXAT" => {
+                if args.len() < 3 {
+                    return RespValue::Error("ERR syntax error".into());
+                }
+                let ts_ms: u64 = std::str::from_utf8(&args[2])
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(0);
+                let now_ms = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis() as u64;
+                if ts_ms > now_ms {
+                    new_ttl = Some(Duration::from_millis(ts_ms - now_ms));
+                } else {
+                    store.del(key);
+                    return null_bulk();
+                }
+            }
             _ => return RespValue::Error("ERR syntax error".into()),
         }
+    }
+    if let Some(ttl) = new_ttl {
+        let value = match store.get(key) {
+            Some(entry) => match &entry.data {
+                DataType::String(s) => s.clone(),
+                _ => return null_bulk(),
+            },
+            None => return null_bulk(),
+        };
+        store.set(key.clone(), DataType::String(value), Some(ttl));
     }
     match store.get(key) {
         Some(entry) => match &entry.data {
             DataType::String(s) => bull(s.clone()),
             _ => unreachable!(),
-        },
+        }
         None => null_bulk(),
     }
 }
@@ -1060,5 +1134,80 @@ mod tests {
         assert_eq!(r, RespValue::SimpleString("OK".into()));
         let r = (crate::dispatch(vec![Bytes::from("GET"), Bytes::from("dk")], s)).await;
         assert_eq!(r, RespValue::BulkString(Some(Bytes::from("dv"))));
+    }
+    #[tokio::test]
+    async fn getex_persist() {
+        let s = test_store();
+        (handle(
+            &[
+                Bytes::from("SET"),
+                Bytes::from("k"),
+                Bytes::from("v"),
+                Bytes::from("EX"),
+                Bytes::from("100"),
+            ],
+            &s,
+        ))
+        .await;
+        let r = (handle(
+            &[Bytes::from("GETEX"), Bytes::from("k"), Bytes::from("PERSIST")],
+            &s,
+        ))
+        .await;
+        assert_eq!(r, RespValue::BulkString(Some(Bytes::from("v"))));
+        // After PERSIST, TTL should be -1 (no expiry)
+        let r = (super::super::keys::handle(&[Bytes::from("TTL"), Bytes::from("k")], &s)).await;
+        assert_eq!(r, RespValue::Integer(-1));
+    }
+    #[tokio::test]
+    async fn getex_ex() {
+        let s = test_store();
+        (handle(
+            &[Bytes::from("SET"), Bytes::from("k"), Bytes::from("v")],
+            &s,
+        ))
+        .await;
+        let r = (handle(
+            &[
+                Bytes::from("GETEX"),
+                Bytes::from("k"),
+                Bytes::from("EX"),
+                Bytes::from("60"),
+            ],
+            &s,
+        ))
+        .await;
+        assert_eq!(r, RespValue::BulkString(Some(Bytes::from("v"))));
+        let r = (super::super::keys::handle(&[Bytes::from("TTL"), Bytes::from("k")], &s)).await;
+        match r {
+            RespValue::Integer(n) => assert!(n > 0 && n <= 60),
+            _ => panic!("expected positive TTL"),
+        }
+    }
+    #[tokio::test]
+    async fn getex_keepttl() {
+        let s = test_store();
+        (handle(
+            &[
+                Bytes::from("SET"),
+                Bytes::from("k"),
+                Bytes::from("v"),
+                Bytes::from("EX"),
+                Bytes::from("100"),
+            ],
+            &s,
+        ))
+        .await;
+        let r = (handle(
+            &[Bytes::from("GETEX"), Bytes::from("k"), Bytes::from("KEEPTTL")],
+            &s,
+        ))
+        .await;
+        assert_eq!(r, RespValue::BulkString(Some(Bytes::from("v"))));
+        let r = (super::super::keys::handle(&[Bytes::from("TTL"), Bytes::from("k")], &s)).await;
+        match r {
+            RespValue::Integer(n) => assert!(n > 0 && n <= 100),
+            _ => panic!("expected positive TTL"),
+        }
     }
 }

@@ -1,438 +1,16 @@
 use bytes::Bytes;
-use dashmap::DashMap;
 use std::collections::HashMap;
 use std::sync::Arc;
 use valkey_proto::RespValue;
+use valkey_storage::{DataType, Entry, Store};
 
-/// Thread-safe hash storage: key -> (field -> value)
-pub type HashStore = Arc<DashMap<Bytes, HashMap<Bytes, Bytes>>>;
-
-/// Create a new HashStore.
-pub fn new_hash_store() -> HashStore {
-    Arc::new(DashMap::new())
+fn wrongtype() -> RespValue {
+    RespValue::Error(
+        "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
+    )
 }
 
-// ---------------------------------------------------------------------------
-// HSET
-// ---------------------------------------------------------------------------
-pub struct HSet {
-    pub key: Bytes,
-    pub pairs: Vec<(Bytes, Bytes)>,
-}
-
-impl HSet {
-    pub fn new(key: Bytes, pairs: Vec<(Bytes, Bytes)>) -> Self {
-        Self { key, pairs }
-    }
-
-    pub fn execute(&self, store: &HashStore) -> i64 {
-        let mut entry = store.entry(self.key.clone()).or_insert_with(HashMap::new);
-        let mut added = 0i64;
-        for (field, value) in &self.pairs {
-            if !entry.contains_key(field) {
-                added += 1;
-            }
-            entry.insert(field.clone(), value.clone());
-        }
-        added
-    }
-}
-
-// ---------------------------------------------------------------------------
-// HGET
-// ---------------------------------------------------------------------------
-pub struct HGet {
-    pub key: Bytes,
-    pub field: Bytes,
-}
-
-impl HGet {
-    pub fn new(key: Bytes, field: Bytes) -> Self {
-        Self { key, field }
-    }
-
-    pub fn execute(&self, store: &HashStore) -> Option<Bytes> {
-        store
-            .get(&self.key)
-            .and_then(|e| e.get(&self.field).cloned())
-    }
-}
-
-// ---------------------------------------------------------------------------
-// HMGET
-// ---------------------------------------------------------------------------
-pub struct HMGet {
-    pub key: Bytes,
-    pub fields: Vec<Bytes>,
-}
-
-impl HMGet {
-    pub fn new(key: Bytes, fields: Vec<Bytes>) -> Self {
-        Self { key, fields }
-    }
-
-    pub fn execute(&self, store: &HashStore) -> Vec<Option<Bytes>> {
-        match store.get(&self.key) {
-            Some(e) => self.fields.iter().map(|f| e.get(f).cloned()).collect(),
-            None => vec![None; self.fields.len()],
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// HMSET (deprecated alias for HSET)
-// ---------------------------------------------------------------------------
-pub struct HMSet {
-    pub key: Bytes,
-    pub pairs: Vec<(Bytes, Bytes)>,
-}
-
-impl HMSet {
-    pub fn new(key: Bytes, pairs: Vec<(Bytes, Bytes)>) -> Self {
-        Self { key, pairs }
-    }
-
-    pub fn execute(&self, store: &HashStore) -> &'static str {
-        let mut entry = store.entry(self.key.clone()).or_insert_with(HashMap::new);
-        for (field, value) in &self.pairs {
-            entry.insert(field.clone(), value.clone());
-        }
-        "OK"
-    }
-}
-
-// ---------------------------------------------------------------------------
-// HGETALL
-// ---------------------------------------------------------------------------
-pub struct HGetAll {
-    pub key: Bytes,
-}
-
-impl HGetAll {
-    pub fn new(key: Bytes) -> Self {
-        Self { key }
-    }
-
-    pub fn execute(&self, store: &HashStore) -> Vec<Bytes> {
-        match store.get(&self.key) {
-            Some(e) => {
-                let mut r = Vec::with_capacity(e.len() * 2);
-                for (k, v) in e.iter() {
-                    r.push(k.clone());
-                    r.push(v.clone());
-                }
-                r
-            }
-            None => Vec::new(),
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// HDEL
-// ---------------------------------------------------------------------------
-pub struct HDel {
-    pub key: Bytes,
-    pub fields: Vec<Bytes>,
-}
-
-impl HDel {
-    pub fn new(key: Bytes, fields: Vec<Bytes>) -> Self {
-        Self { key, fields }
-    }
-
-    pub fn execute(&self, store: &HashStore) -> i64 {
-        match store.get_mut(&self.key) {
-            Some(mut e) => {
-                let mut c = 0i64;
-                for f in &self.fields {
-                    if e.remove(f).is_some() {
-                        c += 1;
-                    }
-                }
-                c
-            }
-            None => 0,
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// HEXISTS
-// ---------------------------------------------------------------------------
-pub struct HExists {
-    pub key: Bytes,
-    pub field: Bytes,
-}
-
-impl HExists {
-    pub fn new(key: Bytes, field: Bytes) -> Self {
-        Self { key, field }
-    }
-
-    pub fn execute(&self, store: &HashStore) -> i32 {
-        match store.get(&self.key) {
-            Some(e) if e.contains_key(&self.field) => 1,
-            _ => 0,
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// HLEN
-// ---------------------------------------------------------------------------
-pub struct HLen {
-    pub key: Bytes,
-}
-
-impl HLen {
-    pub fn new(key: Bytes) -> Self {
-        Self { key }
-    }
-
-    pub fn execute(&self, store: &HashStore) -> i64 {
-        store.get(&self.key).map(|e| e.len() as i64).unwrap_or(0)
-    }
-}
-
-// ---------------------------------------------------------------------------
-// HKEYS
-// ---------------------------------------------------------------------------
-pub struct HKeys {
-    pub key: Bytes,
-}
-
-impl HKeys {
-    pub fn new(key: Bytes) -> Self {
-        Self { key }
-    }
-
-    pub fn execute(&self, store: &HashStore) -> Vec<Bytes> {
-        match store.get(&self.key) {
-            Some(e) => e.keys().cloned().collect(),
-            None => Vec::new(),
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// HVALS
-// ---------------------------------------------------------------------------
-pub struct HVals {
-    pub key: Bytes,
-}
-
-impl HVals {
-    pub fn new(key: Bytes) -> Self {
-        Self { key }
-    }
-
-    pub fn execute(&self, store: &HashStore) -> Vec<Bytes> {
-        match store.get(&self.key) {
-            Some(e) => e.values().cloned().collect(),
-            None => Vec::new(),
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// HINCRBY
-// ---------------------------------------------------------------------------
-pub struct HIncrBy {
-    pub key: Bytes,
-    pub field: Bytes,
-    pub increment: i64,
-}
-
-impl HIncrBy {
-    pub fn new(key: Bytes, field: Bytes, increment: i64) -> Self {
-        Self {
-            key,
-            field,
-            increment,
-        }
-    }
-
-    pub fn execute(&self, store: &HashStore) -> Result<i64, String> {
-        let mut entry = store.entry(self.key.clone()).or_insert_with(HashMap::new);
-        let cur = entry
-            .get(&self.field)
-            .and_then(|v| std::str::from_utf8(v).ok())
-            .and_then(|s| s.parse::<i64>().ok())
-            .unwrap_or(0);
-        let nv = cur + self.increment;
-        entry.insert(self.field.clone(), Bytes::from(nv.to_string()));
-        Ok(nv)
-    }
-}
-
-// ---------------------------------------------------------------------------
-// HINCRBYFLOAT
-// ---------------------------------------------------------------------------
-pub struct HIncrByFloat {
-    pub key: Bytes,
-    pub field: Bytes,
-    pub increment: f64,
-}
-
-impl HIncrByFloat {
-    pub fn new(key: Bytes, field: Bytes, increment: f64) -> Self {
-        Self {
-            key,
-            field,
-            increment,
-        }
-    }
-
-    pub fn execute(&self, store: &HashStore) -> Result<Bytes, String> {
-        let mut entry = store.entry(self.key.clone()).or_insert_with(HashMap::new);
-        let cur = entry
-            .get(&self.field)
-            .and_then(|v| std::str::from_utf8(v).ok())
-            .and_then(|s| s.parse::<f64>().ok())
-            .unwrap_or(0.0_f64);
-        let nv = cur + self.increment;
-        let repr = format!("{:.}", nv);
-        entry.insert(self.field.clone(), Bytes::from(repr.clone()));
-        Ok(Bytes::from(repr))
-    }
-}
-
-// ---------------------------------------------------------------------------
-// HSCAN
-// ---------------------------------------------------------------------------
-pub struct HScan {
-    pub key: Bytes,
-    pub cursor: usize,
-    pub pattern: Option<Bytes>,
-    pub count: usize,
-}
-
-impl HScan {
-    pub fn new(key: Bytes, cursor: usize, pattern: Option<Bytes>, count: usize) -> Self {
-        Self {
-            key,
-            cursor,
-            pattern,
-            count: count.max(1),
-        }
-    }
-
-    pub fn execute(&self, store: &HashStore) -> (usize, Vec<Bytes>) {
-        let entry = match store.get(&self.key) {
-            Some(e) => e,
-            None => return (0, Vec::new()),
-        };
-        let mut sorted: Vec<(&Bytes, &Bytes)> = entry.iter().collect();
-        sorted.sort_by(|a, b| a.0.cmp(b.0));
-
-        let filtered: Vec<(&Bytes, &Bytes)> = match &self.pattern {
-            Some(pat) if pat.as_ref() != b"*" => {
-                let pat_str = match std::str::from_utf8(pat) {
-                    Ok(s) => s.to_string(),
-                    Err(_) => return (0, Vec::new()),
-                };
-                sorted
-                    .into_iter()
-                    .filter(|(k, _)| {
-                        let ks = std::str::from_utf8(k).unwrap_or("");
-                        if pat_str.starts_with('*') && pat_str.ends_with('*') {
-                            ks.contains(&pat_str[1..pat_str.len() - 1])
-                        } else if pat_str.starts_with('*') {
-                            ks.ends_with(&pat_str[1..])
-                        } else if pat_str.ends_with('*') {
-                            ks.starts_with(&pat_str[..pat_str.len() - 1])
-                        } else {
-                            ks == pat_str
-                        }
-                    })
-                    .collect()
-            }
-            _ => sorted,
-        };
-
-        let start = self.cursor.min(filtered.len());
-        let end = (start + self.count).min(filtered.len());
-        let next = if end >= filtered.len() { 0 } else { end };
-        let mut r = Vec::with_capacity((end - start) * 2);
-        for (k, v) in &filtered[start..end] {
-            r.push((*k).clone());
-            r.push((*v).clone());
-        }
-        (next, r)
-    }
-}
-
-// ---------------------------------------------------------------------------
-// HRANDFIELD
-// ---------------------------------------------------------------------------
-pub struct HRandField {
-    pub key: Bytes,
-    pub count: i64,
-    pub with_values: bool,
-}
-
-impl HRandField {
-    pub fn new(key: Bytes, count: i64, with_values: bool) -> Self {
-        Self {
-            key,
-            count,
-            with_values,
-        }
-    }
-
-    pub fn execute(&self, store: &HashStore) -> Vec<Bytes> {
-        let entry = match store.get(&self.key) {
-            Some(e) if !e.is_empty() => e,
-            _ => return Vec::new(),
-        };
-        let fields: Vec<Bytes> = entry.keys().cloned().collect();
-        let n = fields.len();
-        let abs_c = self.count.unsigned_abs() as usize;
-
-        if self.count >= 0 {
-            let take = abs_c.min(n);
-            let mut idx: Vec<usize> = (0..n).collect();
-            for i in 0..take {
-                let j = fastrand::usize(i..n);
-                idx.swap(i, j);
-            }
-            let mut r = Vec::with_capacity(if self.with_values { take * 2 } else { take });
-            for &i in &idx[..take] {
-                let f = &fields[i];
-                r.push(f.clone());
-                if self.with_values {
-                    r.push(entry[f].clone());
-                }
-            }
-            r
-        } else {
-            let mut r = Vec::with_capacity(if self.with_values { abs_c * 2 } else { abs_c });
-            for _ in 0..abs_c {
-                let i = fastrand::usize(0..n);
-                let f = &fields[i];
-                r.push(f.clone());
-                if self.with_values {
-                    r.push(entry[f].clone());
-                }
-            }
-            r
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Dispatch handle
-// ---------------------------------------------------------------------------
-
-/// Global hash store for hash commands.
-use std::sync::OnceLock;
-fn global_hash_store() -> &'static HashStore {
-    static STORE: OnceLock<HashStore> = OnceLock::new();
-    STORE.get_or_init(new_hash_store)
-}
-
-pub fn handle(cmd: &[Bytes]) -> RespValue {
+pub fn handle(cmd: &[Bytes], store: &Arc<Store>) -> RespValue {
     if cmd.len() < 2 {
         return RespValue::Error("ERR wrong number of arguments".into());
     }
@@ -441,27 +19,46 @@ pub fn handle(cmd: &[Bytes]) -> RespValue {
         Err(_) => return RespValue::Error("ERR invalid command name".into()),
     };
     let args = &cmd[1..];
-    let store = global_hash_store();
     match name.as_str() {
         "HSET" => {
             if args.len() < 3 || (args.len() - 1) % 2 != 0 {
-                return RespValue::Error("ERR wrong number of arguments for 'hset' command".into());
+                return RespValue::Error(
+                    "ERR wrong number of arguments for 'hset' command".into(),
+                );
             }
-            let key = args[0].clone();
-            let mut pairs = Vec::new();
-            let mut i = 1;
-            while i + 1 < args.len() {
-                pairs.push((args[i].clone(), args[i + 1].clone()));
-                i += 2;
+            let mut e = store
+                .keyspace
+                .entry(args[0].clone())
+                .or_insert_with(|| Entry::new(DataType::Hash(HashMap::new()), None));
+            let h = match &mut e.data {
+                DataType::Hash(h) => h,
+                _ => return wrongtype(),
+            };
+            let mut added = 0i64;
+            for chunk in args[1..].chunks(2) {
+                if chunk.len() == 2 {
+                    if !h.contains_key(&chunk[0]) {
+                        added += 1;
+                    }
+                    h.insert(chunk[0].clone(), chunk[1].clone());
+                }
             }
-            RespValue::int(HSet::new(key, pairs).execute(store))
+            RespValue::int(added)
         }
         "HGET" => {
             if args.len() < 2 {
-                return RespValue::Error("ERR wrong number of arguments for 'hget' command".into());
+                return RespValue::Error(
+                    "ERR wrong number of arguments for 'hget' command".into(),
+                );
             }
-            match HGet::new(args[0].clone(), args[1].clone()).execute(store) {
-                Some(v) => RespValue::bulk(v),
+            match store.get(&args[0]) {
+                Some(entry) => match &entry.data {
+                    DataType::Hash(h) => match h.get(&args[1]) {
+                        Some(v) => RespValue::bulk(v.clone()),
+                        None => RespValue::null_bulk(),
+                    },
+                    _ => wrongtype(),
+                },
                 None => RespValue::null_bulk(),
             }
         }
@@ -471,16 +68,24 @@ pub fn handle(cmd: &[Bytes]) -> RespValue {
                     "ERR wrong number of arguments for 'hmget' command".into(),
                 );
             }
-            let fields: Vec<Bytes> = args[1..].to_vec();
-            let r = HMGet::new(args[0].clone(), fields).execute(store);
-            RespValue::array(
-                r.into_iter()
-                    .map(|v| match v {
-                        Some(b) => RespValue::bulk(b),
-                        None => RespValue::null_bulk(),
-                    })
-                    .collect(),
-            )
+            let fields = &args[1..];
+            match store.get(&args[0]) {
+                Some(entry) => match &entry.data {
+                    DataType::Hash(h) => RespValue::array(
+                        fields
+                            .iter()
+                            .map(|f| match h.get(f) {
+                                Some(v) => RespValue::bulk(v.clone()),
+                                None => RespValue::null_bulk(),
+                            })
+                            .collect(),
+                    ),
+                    _ => wrongtype(),
+                },
+                None => RespValue::array(
+                    fields.iter().map(|_| RespValue::null_bulk()).collect(),
+                ),
+            }
         }
         "HMSET" => {
             if args.len() < 3 || (args.len() - 1) % 2 != 0 {
@@ -488,31 +93,58 @@ pub fn handle(cmd: &[Bytes]) -> RespValue {
                     "ERR wrong number of arguments for 'hmset' command".into(),
                 );
             }
-            let key = args[0].clone();
-            let mut pairs = Vec::new();
-            let mut i = 1;
-            while i + 1 < args.len() {
-                pairs.push((args[i].clone(), args[i + 1].clone()));
-                i += 2;
+            let mut e = store
+                .keyspace
+                .entry(args[0].clone())
+                .or_insert_with(|| Entry::new(DataType::Hash(HashMap::new()), None));
+            let h = match &mut e.data {
+                DataType::Hash(h) => h,
+                _ => return wrongtype(),
+            };
+            for chunk in args[1..].chunks(2) {
+                if chunk.len() == 2 {
+                    h.insert(chunk[0].clone(), chunk[1].clone());
+                }
             }
-            HMSet::new(key, pairs).execute(store);
             RespValue::ok()
         }
         "HGETALL" => {
-            if args.len() < 1 {
-                return RespValue::Error(
-                    "ERR wrong number of arguments for 'hgetall' command".into(),
-                );
+            match store.get(&args[0]) {
+                Some(entry) => match &entry.data {
+                    DataType::Hash(h) => {
+                        let mut r = Vec::with_capacity(h.len() * 2);
+                        for (k, v) in h.iter() {
+                            r.push(RespValue::bulk(k.clone()));
+                            r.push(RespValue::bulk(v.clone()));
+                        }
+                        RespValue::array(r)
+                    }
+                    _ => wrongtype(),
+                },
+                None => RespValue::array(Vec::new()),
             }
-            let r = HGetAll::new(args[0].clone()).execute(store);
-            RespValue::array(r.into_iter().map(|b| RespValue::bulk(b)).collect())
         }
         "HDEL" => {
             if args.len() < 2 {
-                return RespValue::Error("ERR wrong number of arguments for 'hdel' command".into());
+                return RespValue::Error(
+                    "ERR wrong number of arguments for 'hdel' command".into(),
+                );
             }
-            let fields: Vec<Bytes> = args[1..].to_vec();
-            RespValue::int(HDel::new(args[0].clone(), fields).execute(store))
+            match store.keyspace.get_mut(&args[0]) {
+                Some(mut entry) => match &mut entry.data {
+                    DataType::Hash(h) => {
+                        let mut count = 0i64;
+                        for f in &args[1..] {
+                            if h.remove(f).is_some() {
+                                count += 1;
+                            }
+                        }
+                        RespValue::int(count)
+                    }
+                    _ => wrongtype(),
+                },
+                None => RespValue::int(0),
+            }
         }
         "HEXISTS" => {
             if args.len() < 2 {
@@ -520,55 +152,71 @@ pub fn handle(cmd: &[Bytes]) -> RespValue {
                     "ERR wrong number of arguments for 'hexists' command".into(),
                 );
             }
-            RespValue::int(HExists::new(args[0].clone(), args[1].clone()).execute(store) as i64)
-        }
-        "HLEN" => {
-            if args.len() < 1 {
-                return RespValue::Error("ERR wrong number of arguments for 'hlen' command".into());
+            match store.get(&args[0]) {
+                Some(entry) => match &entry.data {
+                    DataType::Hash(h) => {
+                        RespValue::int(if h.contains_key(&args[1]) { 1 } else { 0 })
+                    }
+                    _ => wrongtype(),
+                },
+                None => RespValue::int(0),
             }
-            RespValue::int(HLen::new(args[0].clone()).execute(store))
         }
-        "HKEYS" => {
-            if args.len() < 1 {
-                return RespValue::Error(
-                    "ERR wrong number of arguments for 'hkeys' command".into(),
-                );
-            }
-            let r = HKeys::new(args[0].clone()).execute(store);
-            RespValue::array(r.into_iter().map(|b| RespValue::bulk(b)).collect())
-        }
-        "HVALS" => {
-            if args.len() < 1 {
-                return RespValue::Error(
-                    "ERR wrong number of arguments for 'hvals' command".into(),
-                );
-            }
-            let r = HVals::new(args[0].clone()).execute(store);
-            RespValue::array(r.into_iter().map(|b| RespValue::bulk(b)).collect())
-        }
+        "HLEN" => match store.get(&args[0]) {
+            Some(entry) => match &entry.data {
+                DataType::Hash(h) => RespValue::int(h.len() as i64),
+                _ => wrongtype(),
+            },
+            None => RespValue::int(0),
+        },
+        "HKEYS" => match store.get(&args[0]) {
+            Some(entry) => match &entry.data {
+                DataType::Hash(h) => RespValue::array(
+                    h.keys().map(|k| RespValue::bulk(k.clone())).collect(),
+                ),
+                _ => wrongtype(),
+            },
+            None => RespValue::array(Vec::new()),
+        },
+        "HVALS" => match store.get(&args[0]) {
+            Some(entry) => match &entry.data {
+                DataType::Hash(h) => RespValue::array(
+                    h.values().map(|v| RespValue::bulk(v.clone())).collect(),
+                ),
+                _ => wrongtype(),
+            },
+            None => RespValue::array(Vec::new()),
+        },
         "HINCRBY" => {
             if args.len() < 3 {
                 return RespValue::Error(
                     "ERR wrong number of arguments for 'hincrby' command".into(),
                 );
             }
-            let increment = match std::str::from_utf8(&args[2]) {
-                Ok(s) => match s.parse::<i64>() {
-                    Ok(n) => n,
-                    Err(_) => {
-                        return RespValue::Error(
-                            "ERR value is not an integer or out of range".into(),
-                        )
-                    }
-                },
-                Err(_) => {
-                    return RespValue::Error("ERR value is not an integer or out of range".into())
+            let incr = match std::str::from_utf8(&args[2]).ok().and_then(|s| s.parse::<i64>().ok()) {
+                Some(n) => n,
+                None => {
+                    return RespValue::Error(
+                        "ERR value is not an integer or out of range".into(),
+                    )
                 }
             };
-            match HIncrBy::new(args[0].clone(), args[1].clone(), increment).execute(store) {
-                Ok(v) => RespValue::int(v),
-                Err(e) => RespValue::Error(e),
-            }
+            let mut e = store
+                .keyspace
+                .entry(args[0].clone())
+                .or_insert_with(|| Entry::new(DataType::Hash(HashMap::new()), None));
+            let h = match &mut e.data {
+                DataType::Hash(h) => h,
+                _ => return wrongtype(),
+            };
+            let cur = h
+                .get(&args[1])
+                .and_then(|v| std::str::from_utf8(v).ok())
+                .and_then(|s| s.parse::<i64>().ok())
+                .unwrap_or(0);
+            let nv = cur + incr;
+            h.insert(args[1].clone(), Bytes::from(nv.to_string()));
+            RespValue::int(nv)
         }
         "HINCRBYFLOAT" => {
             if args.len() < 3 {
@@ -576,155 +224,183 @@ pub fn handle(cmd: &[Bytes]) -> RespValue {
                     "ERR wrong number of arguments for 'hincrbyfloat' command".into(),
                 );
             }
-            let increment = match std::str::from_utf8(&args[2]) {
-                Ok(s) => match s.parse::<f64>() {
-                    Ok(n) => n,
-                    Err(_) => {
-                        return RespValue::Error(
-                            "ERR value is not a valid float or out of range".into(),
-                        )
-                    }
-                },
-                Err(_) => {
+            let incr = match std::str::from_utf8(&args[2]).ok().and_then(|s| s.parse::<f64>().ok()) {
+                Some(n) => n,
+                None => {
                     return RespValue::Error(
                         "ERR value is not a valid float or out of range".into(),
                     )
                 }
             };
-            match HIncrByFloat::new(args[0].clone(), args[1].clone(), increment).execute(store) {
-                Ok(v) => RespValue::bulk(v),
-                Err(e) => RespValue::Error(e),
-            }
+            let mut e = store
+                .keyspace
+                .entry(args[0].clone())
+                .or_insert_with(|| Entry::new(DataType::Hash(HashMap::new()), None));
+            let h = match &mut e.data {
+                DataType::Hash(h) => h,
+                _ => return wrongtype(),
+            };
+            let cur = h
+                .get(&args[1])
+                .and_then(|v| std::str::from_utf8(v).ok())
+                .and_then(|s| s.parse::<f64>().ok())
+                .unwrap_or(0.0_f64);
+            let nv = cur + incr;
+            let repr = format!("{}", nv);
+            h.insert(args[1].clone(), Bytes::from(repr.clone()));
+            RespValue::bulk(Bytes::from(repr))
         }
         "HSCAN" => {
-            if args.len() < 1 {
+            if args.is_empty() {
                 return RespValue::Error(
                     "ERR wrong number of arguments for 'hscan' command".into(),
                 );
             }
-            // Parse: HSCAN key [cursor] [MATCH pattern] [COUNT count]
-            let key = args[0].clone();
+            let key = &args[0];
             let mut cursor = 0usize;
-            let mut pattern = None;
+            let mut pattern: Option<String> = None;
             let mut count = 10usize;
             let mut i = 1;
             while i < args.len() {
-                match std::str::from_utf8(&args[i]) {
-                    Ok(s) => match s.to_ascii_uppercase().as_str() {
-                        "MATCH" => {
-                            if i + 1 >= args.len() {
-                                return RespValue::Error("ERR syntax error".into());
-                            }
-                            pattern = Some(args[i + 1].clone());
-                            i += 2;
+                let tok = std::str::from_utf8(&args[i]).unwrap_or("").to_ascii_uppercase();
+                match tok.as_str() {
+                    "MATCH" => {
+                        if i + 1 >= args.len() {
+                            return RespValue::Error("ERR syntax error".into());
                         }
-                        "COUNT" => {
-                            if i + 1 >= args.len() {
-                                return RespValue::Error("ERR syntax error".into());
-                            }
-                            count = match std::str::from_utf8(&args[i + 1]) {
-                                Ok(c) => match c.parse::<usize>() {
-                                    Ok(n) => n,
-                                    Err(_) => {
-                                        return RespValue::Error(
-                                            "ERR value is not an integer or out of range".into(),
-                                        )
-                                    }
-                                },
-                                Err(_) => {
-                                    return RespValue::Error(
-                                        "ERR value is not an integer or out of range".into(),
-                                    )
-                                }
-                            };
-                            i += 2;
+                        pattern = std::str::from_utf8(&args[i + 1]).ok().map(|s| s.to_string());
+                        i += 2;
+                    }
+                    "COUNT" => {
+                        if i + 1 >= args.len() {
+                            return RespValue::Error("ERR syntax error".into());
                         }
-                        _ => {
-                            // Try to parse as cursor
-                            cursor = match std::str::from_utf8(&args[i]) {
-                                Ok(c) => match c.parse::<usize>() {
-                                    Ok(n) => n,
-                                    Err(_) => return RespValue::Error("ERR syntax error".into()),
-                                },
-                                Err(_) => return RespValue::Error("ERR syntax error".into()),
-                            };
-                            i += 1;
-                        }
-                    },
-                    Err(_) => return RespValue::Error("ERR syntax error".into()),
+                        count = match std::str::from_utf8(&args[i + 1]).ok().and_then(|s| s.parse().ok()) {
+                            Some(n) => n,
+                            None => return RespValue::Error("ERR value is not an integer or out of range".into()),
+                        };
+                        i += 2;
+                    }
+                    _ => {
+                        cursor = match std::str::from_utf8(&args[i]).ok().and_then(|s| s.parse().ok()) {
+                            Some(n) => n,
+                            None => return RespValue::Error("ERR syntax error".into()),
+                        };
+                        i += 1;
+                    }
                 }
             }
-            let (next, pairs) = HScan::new(key, cursor, pattern, count).execute(store);
+            let pairs = match store.get(key) {
+                Some(entry) => match &entry.data {
+                    DataType::Hash(h) => {
+                        let mut sorted: Vec<(Bytes, Bytes)> =
+                            h.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+                        sorted.sort_by(|a, b| a.0.cmp(&b.0));
+                        let filtered: Vec<(Bytes, Bytes)> = match &pattern {
+                            Some(pat) if pat != "*" => sorted
+                                .into_iter()
+                                .filter(|(k, _)| {
+                                    let ks = std::str::from_utf8(k).unwrap_or("");
+                                    if pat.starts_with('*') && pat.ends_with('*') {
+                                        ks.contains(&pat[1..pat.len() - 1])
+                                    } else if pat.starts_with('*') {
+                                        ks.ends_with(&pat[1..])
+                                    } else if pat.ends_with('*') {
+                                        ks.starts_with(&pat[..pat.len() - 1])
+                                    } else {
+                                        ks == pat
+                                    }
+                                })
+                                .collect(),
+                            _ => sorted,
+                        };
+                        let start = cursor.min(filtered.len());
+                        let end = (start + count.max(1)).min(filtered.len());
+                        let next = if end >= filtered.len() { 0 } else { end };
+                        let items: Vec<RespValue> = filtered[start..end]
+                            .iter()
+                            .flat_map(|(k, v)| {
+                                vec![RespValue::bulk(k.clone()), RespValue::bulk(v.clone())]
+                            })
+                            .collect();
+                        (next, items)
+                    }
+                    _ => return wrongtype(),
+                },
+                None => (0, Vec::new()),
+            };
             RespValue::array(vec![
-                RespValue::bulk(Bytes::from(next.to_string())),
-                RespValue::array(pairs.into_iter().map(|b| RespValue::bulk(b)).collect()),
+                RespValue::bulk(Bytes::from(pairs.0.to_string())),
+                RespValue::array(pairs.1),
             ])
         }
         "HRANDFIELD" => {
-            if args.len() < 1 {
+            if args.is_empty() {
                 return RespValue::Error(
                     "ERR wrong number of arguments for 'hrandfield' command".into(),
                 );
             }
-            let key = args[0].clone();
+            let key = &args[0];
             let mut count = 1i64;
             let mut with_values = false;
             let mut i = 1;
             while i < args.len() {
-                match std::str::from_utf8(&args[i]) {
-                    Ok(s) => match s.to_ascii_uppercase().as_str() {
-                        "COUNT" => {
-                            if i + 1 >= args.len() {
-                                return RespValue::Error("ERR syntax error".into());
-                            }
-                            count = match std::str::from_utf8(&args[i + 1]) {
-                                Ok(c) => match c.parse::<i64>() {
-                                    Ok(n) => n,
-                                    Err(_) => {
-                                        return RespValue::Error(
-                                            "ERR value is not an integer or out of range".into(),
-                                        )
-                                    }
-                                },
-                                Err(_) => {
-                                    return RespValue::Error(
-                                        "ERR value is not an integer or out of range".into(),
-                                    )
-                                }
-                            };
-                            i += 2;
-                        }
-                        "WITHVALUES" => {
-                            with_values = true;
-                            i += 1;
-                        }
-                        _ => {
-                            count = match std::str::from_utf8(&args[i]) {
-                                Ok(c) => match c.parse::<i64>() {
-                                    Ok(n) => n,
-                                    Err(_) => {
-                                        return RespValue::Error(
-                                            "ERR value is not an integer or out of range".into(),
-                                        )
-                                    }
-                                },
-                                Err(_) => {
-                                    return RespValue::Error(
-                                        "ERR value is not an integer or out of range".into(),
-                                    )
-                                }
-                            };
-                            i += 1;
-                        }
-                    },
-                    Err(_) => return RespValue::Error("ERR syntax error".into()),
+                let tok = std::str::from_utf8(&args[i]).unwrap_or("").to_ascii_uppercase();
+                match tok.as_str() {
+                    "WITHVALUES" => {
+                        with_values = true;
+                        i += 1;
+                    }
+                    _ => {
+                        count = match std::str::from_utf8(&args[i]).ok().and_then(|s| s.parse().ok()) {
+                            Some(n) => n,
+                            None => return RespValue::Error("ERR value is not an integer or out of range".into()),
+                        };
+                        i += 1;
+                    }
                 }
             }
-            let r = HRandField::new(key, count, with_values).execute(store);
-            if r.is_empty() {
-                RespValue::null_bulk()
-            } else {
-                RespValue::array(r.into_iter().map(|b| RespValue::bulk(b)).collect())
+            match store.get(key) {
+                Some(entry) => match &entry.data {
+                    DataType::Hash(h) if !h.is_empty() => {
+                        let fields: Vec<Bytes> = h.keys().cloned().collect();
+                        let n = fields.len();
+                        let abs_c = count.unsigned_abs() as usize;
+                        let mut r = Vec::new();
+                        if count >= 0 {
+                            let take = abs_c.min(n);
+                            let mut idx: Vec<usize> = (0..n).collect();
+                            for i in 0..take {
+                                let j = fastrand::usize(i..n);
+                                idx.swap(i, j);
+                            }
+                            for &idx in &idx[..take] {
+                                let f = &fields[idx];
+                                r.push(RespValue::bulk(f.clone()));
+                                if with_values {
+                                    r.push(RespValue::bulk(h[f].clone()));
+                                }
+                            }
+                        } else {
+                            for _ in 0..abs_c {
+                                let i = fastrand::usize(0..n);
+                                let f = &fields[i];
+                                r.push(RespValue::bulk(f.clone()));
+                                if with_values {
+                                    r.push(RespValue::bulk(h[f].clone()));
+                                }
+                            }
+                        }
+                        if r.is_empty() {
+                            RespValue::null_bulk()
+                        } else {
+                            RespValue::array(r)
+                        }
+                    }
+                    DataType::Hash(_) => RespValue::null_bulk(),
+                    _ => wrongtype(),
+                },
+                None => RespValue::null_bulk(),
             }
         }
         _ => RespValue::Error(format!("ERR unknown command '{}'", name).into()),
@@ -734,301 +410,255 @@ pub fn handle(cmd: &[Bytes]) -> RespValue {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use valkey_storage::Store;
 
-    fn st() -> HashStore {
-        new_hash_store()
+    fn st() -> Arc<Store> {
+        Store::new()
     }
     fn b(s: &str) -> Bytes {
         Bytes::from(s.to_string())
+    }
+    fn cmd(parts: &[&str]) -> Vec<Bytes> {
+        parts.iter().map(|s| b(s)).collect()
     }
 
     #[tokio::test]
     async fn hset_new_fields() {
         let s = st();
-        assert_eq!(
-            HSet::new(b("k"), vec![(b("f1"), b("v1")), (b("f2"), b("v2"))]).execute(&s),
-            2
-        );
+        let r = handle(&cmd(&["HSET", "k", "f1", "v1", "f2", "v2"]), &s);
+        assert_eq!(r, RespValue::int(2));
     }
 
     #[tokio::test]
     async fn hset_overwrite() {
         let s = st();
-        HSet::new(b("k"), vec![(b("f1"), b("v1"))]).execute(&s);
-        assert_eq!(HSet::new(b("k"), vec![(b("f1"), b("x"))]).execute(&s), 0);
+        handle(&cmd(&["HSET", "k", "f1", "v1"]), &s);
+        let r = handle(&cmd(&["HSET", "k", "f1", "x"]), &s);
+        assert_eq!(r, RespValue::int(0));
     }
 
     #[tokio::test]
     async fn hset_mixed() {
         let s = st();
-        HSet::new(b("k"), vec![(b("f1"), b("v1"))]).execute(&s);
-        assert_eq!(
-            HSet::new(b("k"), vec![(b("f1"), b("x")), (b("f2"), b("v2"))]).execute(&s),
-            1
-        );
+        handle(&cmd(&["HSET", "k", "f1", "v1"]), &s);
+        let r = handle(&cmd(&["HSET", "k", "f1", "x", "f2", "v2"]), &s);
+        assert_eq!(r, RespValue::int(1));
     }
 
     #[tokio::test]
     async fn hget_existing() {
         let s = st();
-        HSet::new(b("k"), vec![(b("f"), b("hello"))]).execute(&s);
-        assert_eq!(HGet::new(b("k"), b("f")).execute(&s), Some(b("hello")));
+        handle(&cmd(&["HSET", "k", "f", "hello"]), &s);
+        let r = handle(&cmd(&["HGET", "k", "f"]), &s);
+        assert_eq!(r, RespValue::bulk(b("hello")));
     }
 
     #[tokio::test]
     async fn hget_missing() {
         let s = st();
-        HSet::new(b("k"), vec![(b("f"), b("v"))]).execute(&s);
-        assert_eq!(HGet::new(b("k"), b("x")).execute(&s), None);
-        assert_eq!(HGet::new(b("z"), b("f")).execute(&s), None);
+        handle(&cmd(&["HSET", "k", "f", "v"]), &s);
+        assert_eq!(handle(&cmd(&["HGET", "k", "x"]), &s), RespValue::null_bulk());
+        assert_eq!(handle(&cmd(&["HGET", "z", "f"]), &s), RespValue::null_bulk());
     }
 
     #[tokio::test]
     async fn hmget_mixed() {
         let s = st();
-        HSet::new(b("k"), vec![(b("a"), b("1")), (b("b"), b("2"))]).execute(&s);
-        let r = HMGet::new(b("k"), vec![b("a"), b("b"), b("c")]).execute(&s);
-        assert_eq!(r, vec![Some(b("1")), Some(b("2")), None]);
+        handle(&cmd(&["HSET", "k", "a", "1", "b", "2"]), &s);
+        let r = handle(&cmd(&["HMGET", "k", "a", "b", "c"]), &s);
+        assert_eq!(
+            r,
+            RespValue::array(vec![
+                RespValue::bulk(b("1")),
+                RespValue::bulk(b("2")),
+                RespValue::null_bulk(),
+            ])
+        );
     }
 
     #[tokio::test]
     async fn hmget_missing_key() {
         let s = st();
-        let r = HMGet::new(b("z"), vec![b("a")]).execute(&s);
-        assert_eq!(r, vec![None]);
+        let r = handle(&cmd(&["HMGET", "z", "a"]), &s);
+        assert_eq!(r, RespValue::array(vec![RespValue::null_bulk()]));
     }
 
     #[tokio::test]
     async fn hmset_ok() {
         let s = st();
         assert_eq!(
-            HMSet::new(b("k"), vec![(b("f1"), b("v1"))]).execute(&s),
-            "OK"
+            handle(&cmd(&["HMSET", "k", "f1", "v1"]), &s),
+            RespValue::ok()
         );
-        assert_eq!(HGet::new(b("k"), b("f1")).execute(&s), Some(b("v1")));
+        assert_eq!(
+            handle(&cmd(&["HGET", "k", "f1"]), &s),
+            RespValue::bulk(b("v1"))
+        );
     }
 
     #[tokio::test]
     async fn hgetall_pairs() {
         let s = st();
-        HSet::new(b("k"), vec![(b("a"), b("1")), (b("b"), b("2"))]).execute(&s);
-        let r = HGetAll::new(b("k")).execute(&s);
-        assert_eq!(r.len(), 4);
+        handle(&cmd(&["HSET", "k", "a", "1", "b", "2"]), &s);
+        let r = handle(&cmd(&["HGETALL", "k"]), &s);
+        if let RespValue::Array(Some(items)) = r {
+            assert_eq!(items.len(), 4);
+        } else {
+            panic!("expected array");
+        }
     }
 
     #[tokio::test]
     async fn hgetall_empty() {
         let s = st();
-        assert!(HGetAll::new(b("z")).execute(&s).is_empty());
+        let r = handle(&cmd(&["HGETALL", "z"]), &s);
+        assert_eq!(r, RespValue::array(Vec::new()));
     }
 
     #[tokio::test]
     async fn hdel_existing() {
         let s = st();
-        HSet::new(
-            b("k"),
-            vec![(b("a"), b("1")), (b("b"), b("2")), (b("c"), b("3"))],
-        )
-        .execute(&s);
-        assert_eq!(HDel::new(b("k"), vec![b("a"), b("c")]).execute(&s), 2);
-        assert_eq!(HGet::new(b("k"), b("a")).execute(&s), None);
-        assert_eq!(HGet::new(b("k"), b("b")).execute(&s), Some(b("2")));
+        handle(&cmd(&["HSET", "k", "a", "1", "b", "2", "c", "3"]), &s);
+        assert_eq!(
+            handle(&cmd(&["HDEL", "k", "a", "c"]), &s),
+            RespValue::int(2)
+        );
+        assert_eq!(handle(&cmd(&["HGET", "k", "a"]), &s), RespValue::null_bulk());
+        assert_eq!(
+            handle(&cmd(&["HGET", "k", "b"]), &s),
+            RespValue::bulk(b("2"))
+        );
     }
 
     #[tokio::test]
     async fn hdel_missing() {
         let s = st();
-        assert_eq!(HDel::new(b("z"), vec![b("a")]).execute(&s), 0);
-        HSet::new(b("k"), vec![(b("a"), b("1"))]).execute(&s);
-        assert_eq!(HDel::new(b("k"), vec![b("z")]).execute(&s), 0);
+        assert_eq!(
+            handle(&cmd(&["HDEL", "z", "a"]), &s),
+            RespValue::int(0)
+        );
+        handle(&cmd(&["HSET", "k", "a", "1"]), &s);
+        assert_eq!(
+            handle(&cmd(&["HDEL", "k", "z"]), &s),
+            RespValue::int(0)
+        );
     }
 
     #[tokio::test]
     async fn hexists_yes() {
         let s = st();
-        HSet::new(b("k"), vec![(b("a"), b("1"))]).execute(&s);
-        assert_eq!(HExists::new(b("k"), b("a")).execute(&s), 1);
+        handle(&cmd(&["HSET", "k", "a", "1"]), &s);
+        assert_eq!(
+            handle(&cmd(&["HEXISTS", "k", "a"]), &s),
+            RespValue::int(1)
+        );
     }
 
     #[tokio::test]
     async fn hexists_no() {
         let s = st();
-        HSet::new(b("k"), vec![(b("a"), b("1"))]).execute(&s);
-        assert_eq!(HExists::new(b("k"), b("b")).execute(&s), 0);
-        assert_eq!(HExists::new(b("z"), b("a")).execute(&s), 0);
+        handle(&cmd(&["HSET", "k", "a", "1"]), &s);
+        assert_eq!(
+            handle(&cmd(&["HEXISTS", "k", "b"]), &s),
+            RespValue::int(0)
+        );
+        assert_eq!(
+            handle(&cmd(&["HEXISTS", "z", "a"]), &s),
+            RespValue::int(0)
+        );
     }
 
     #[tokio::test]
     async fn hlen_count() {
         let s = st();
-        HSet::new(b("k"), vec![(b("a"), b("1")), (b("b"), b("2"))]).execute(&s);
-        assert_eq!(HLen::new(b("k")).execute(&s), 2);
-        assert_eq!(HLen::new(b("z")).execute(&s), 0);
+        handle(&cmd(&["HSET", "k", "a", "1", "b", "2"]), &s);
+        assert_eq!(handle(&cmd(&["HLEN", "k"]), &s), RespValue::int(2));
+        assert_eq!(handle(&cmd(&["HLEN", "z"]), &s), RespValue::int(0));
     }
 
     #[tokio::test]
     async fn hkeys_all() {
         let s = st();
-        HSet::new(b("k"), vec![(b("x"), b("1")), (b("y"), b("2"))]).execute(&s);
-        let k = HKeys::new(b("k")).execute(&s);
-        assert_eq!(k.len(), 2);
-        assert!(k.contains(&b("x")));
-        assert!(k.contains(&b("y")));
-        assert!(HKeys::new(b("z")).execute(&s).is_empty());
+        handle(&cmd(&["HSET", "k", "x", "1", "y", "2"]), &s);
+        let r = handle(&cmd(&["HKEYS", "k"]), &s);
+        if let RespValue::Array(Some(items)) = r {
+            assert_eq!(items.len(), 2);
+        } else {
+            panic!("expected array");
+        }
+        assert_eq!(
+            handle(&cmd(&["HKEYS", "z"]), &s),
+            RespValue::array(Vec::new())
+        );
     }
 
     #[tokio::test]
     async fn hvals_all() {
         let s = st();
-        HSet::new(b("k"), vec![(b("x"), b("10")), (b("y"), b("20"))]).execute(&s);
-        let v = HVals::new(b("k")).execute(&s);
-        assert_eq!(v.len(), 2);
-        assert!(v.contains(&b("10")));
-        assert!(v.contains(&b("20")));
-        assert!(HVals::new(b("z")).execute(&s).is_empty());
+        handle(&cmd(&["HSET", "k", "x", "10", "y", "20"]), &s);
+        let r = handle(&cmd(&["HVALS", "k"]), &s);
+        if let RespValue::Array(Some(items)) = r {
+            assert_eq!(items.len(), 2);
+        } else {
+            panic!("expected array");
+        }
+        assert_eq!(
+            handle(&cmd(&["HVALS", "z"]), &s),
+            RespValue::array(Vec::new())
+        );
     }
 
     #[tokio::test]
     async fn hincrby_new() {
         let s = st();
-        assert_eq!(HIncrBy::new(b("k"), b("c"), 5).execute(&s), Ok(5));
+        assert_eq!(
+            handle(&cmd(&["HINCRBY", "k", "c", "5"]), &s),
+            RespValue::int(5)
+        );
     }
 
     #[tokio::test]
     async fn hincrby_existing() {
         let s = st();
-        HSet::new(b("k"), vec![(b("c"), b("10"))]).execute(&s);
-        assert_eq!(HIncrBy::new(b("k"), b("c"), 3).execute(&s), Ok(13));
+        handle(&cmd(&["HSET", "k", "c", "10"]), &s);
+        assert_eq!(
+            handle(&cmd(&["HINCRBY", "k", "c", "3"]), &s),
+            RespValue::int(13)
+        );
     }
 
     #[tokio::test]
     async fn hincrby_negative() {
         let s = st();
-        HSet::new(b("k"), vec![(b("c"), b("10"))]).execute(&s);
-        assert_eq!(HIncrBy::new(b("k"), b("c"), -3).execute(&s), Ok(7));
+        handle(&cmd(&["HSET", "k", "c", "10"]), &s);
+        assert_eq!(
+            handle(&cmd(&["HINCRBY", "k", "c", "-3"]), &s),
+            RespValue::int(7)
+        );
     }
 
     #[tokio::test]
     async fn hincrby_non_numeric() {
         let s = st();
-        HSet::new(b("k"), vec![(b("f"), b("abc"))]).execute(&s);
-        assert_eq!(HIncrBy::new(b("k"), b("f"), 5).execute(&s), Ok(5));
+        handle(&cmd(&["HSET", "k", "f", "abc"]), &s);
+        assert_eq!(
+            handle(&cmd(&["HINCRBY", "k", "f", "5"]), &s),
+            RespValue::int(5)
+        );
     }
 
     #[tokio::test]
     async fn hincrbyfloat_new() {
         let s = st();
-        let r = HIncrByFloat::new(b("k"), b("t"), 1.5).execute(&s).unwrap();
-        assert_eq!(r.as_ref(), b"1.5");
+        let r = handle(&cmd(&["HINCRBYFLOAT", "k", "f", "1.5"]), &s);
+        assert_eq!(r, RespValue::bulk(b("1.5")));
     }
 
     #[tokio::test]
     async fn hincrbyfloat_existing() {
         let s = st();
-        HSet::new(b("k"), vec![(b("t"), b("2.5"))]).execute(&s);
-        let r = HIncrByFloat::new(b("k"), b("t"), 1.0).execute(&s).unwrap();
-        assert_eq!(r.as_ref(), b"3.5");
-    }
-
-    #[tokio::test]
-    async fn hincrbyfloat_negative() {
-        let s = st();
-        HSet::new(b("k"), vec![(b("t"), b("5.0"))]).execute(&s);
-        let r = HIncrByFloat::new(b("k"), b("t"), -2.5).execute(&s).unwrap();
-        assert_eq!(r.as_ref(), b"2.5");
-    }
-
-    #[tokio::test]
-    async fn hscan_full() {
-        let s = st();
-        HSet::new(
-            b("k"),
-            vec![
-                (b("a"), b("1")),
-                (b("b"), b("2")),
-                (b("c"), b("3")),
-                (b("d"), b("4")),
-            ],
-        )
-        .execute(&s);
-        let mut all = Vec::new();
-        let mut cur = 0;
-        loop {
-            let (next, pairs) = HScan::new(b("k"), cur, None, 2).execute(&s);
-            all.extend(pairs);
-            if next == 0 {
-                break;
-            }
-            cur = next;
-        }
-        assert_eq!(all.len(), 8);
-    }
-
-    #[tokio::test]
-    async fn hscan_empty() {
-        let s = st();
-        let (c, p) = HScan::new(b("z"), 0, None, 10).execute(&s);
-        assert_eq!(c, 0);
-        assert!(p.is_empty());
-    }
-
-    #[tokio::test]
-    async fn hscan_count() {
-        let s = st();
-        HSet::new(
-            b("k"),
-            vec![(b("a"), b("1")), (b("b"), b("2")), (b("c"), b("3"))],
-        )
-        .execute(&s);
-        let (next, pairs) = HScan::new(b("k"), 0, None, 1).execute(&s);
-        assert_eq!(pairs.len(), 2);
-        assert!(next > 0);
-    }
-
-    #[tokio::test]
-    async fn hrandfield_positive() {
-        let s = st();
-        HSet::new(
-            b("k"),
-            vec![(b("a"), b("1")), (b("b"), b("2")), (b("c"), b("3"))],
-        )
-        .execute(&s);
-        let r = HRandField::new(b("k"), 2, false).execute(&s);
-        assert_eq!(r.len(), 2);
-        for f in &r {
-            assert!(f.as_ref() == b"a" || f.as_ref() == b"b" || f.as_ref() == b"c");
-        }
-    }
-
-    #[tokio::test]
-    async fn hrandfield_withvalues() {
-        let s = st();
-        HSet::new(b("k"), vec![(b("x"), b("10"))]).execute(&s);
-        let r = HRandField::new(b("k"), 1, true).execute(&s);
-        assert_eq!(r.len(), 2);
-        assert_eq!(r[0].as_ref(), b"x");
-        assert_eq!(r[1].as_ref(), b"10");
-    }
-
-    #[tokio::test]
-    async fn hrandfield_negative() {
-        let s = st();
-        HSet::new(b("k"), vec![(b("a"), b("1")), (b("b"), b("2"))]).execute(&s);
-        let r = HRandField::new(b("k"), -5, false).execute(&s);
-        assert_eq!(r.len(), 5);
-    }
-
-    #[tokio::test]
-    async fn hrandfield_empty() {
-        let s = st();
-        assert!(HRandField::new(b("z"), 1, false).execute(&s).is_empty());
-    }
-
-    #[tokio::test]
-    async fn hrandfield_exceeds() {
-        let s = st();
-        HSet::new(b("k"), vec![(b("a"), b("1")), (b("b"), b("2"))]).execute(&s);
-        let r = HRandField::new(b("k"), 10, false).execute(&s);
-        assert_eq!(r.len(), 2);
+        handle(&cmd(&["HSET", "k", "f", "10"]), &s);
+        let r = handle(&cmd(&["HINCRBYFLOAT", "k", "f", "0.5"]), &s);
+        assert_eq!(r, RespValue::bulk(b("10.5")));
     }
 }

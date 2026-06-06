@@ -129,7 +129,9 @@ pub async fn dispatch_ctx(cmd: Vec<Bytes>, store: Db, ctx: &CommandCtx) -> RespV
         | "LREM" | "LTRIM" | "LMOVE" | "BLPOP" | "BRPOP" | "LMPOP" | "BLMPOP" | "BLMOVE"
         | "LPOS" => list::handle(&cmd, &store).await,
         "HSET" | "HGET" | "HMGET" | "HMSET" | "HGETALL" | "HDEL" | "HEXISTS" | "HLEN" | "HKEYS"
-        | "HVALS" | "HINCRBY" | "HINCRBYFLOAT" | "HSCAN" | "HRANDFIELD" => hash::handle(&cmd),
+        | "HVALS" | "HINCRBY" | "HINCRBYFLOAT" | "HSCAN" | "HRANDFIELD" => {
+            hash::handle(&cmd, &store)
+        }
         "SADD" | "SMEMBERS" | "SISMEMBER" | "SMISMEMBER" | "SCARD" | "SREM" | "SPOP"
         | "SRANDMEMBER" | "SMOVE" | "SUNION" | "SINTER" | "SDIFF" | "SUNIONSTORE"
         | "SINTERSTORE" | "SINTERCARD" | "SDIFFSTORE" | "SSCAN" => set::handle(&cmd, &store),

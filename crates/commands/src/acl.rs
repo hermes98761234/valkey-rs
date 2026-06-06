@@ -104,7 +104,7 @@ fn build_categories() -> HashMap<String, HashSet<String>> {
         "list",
         [
             "LPUSH", "RPUSH", "LPOP", "RPOP", "LRANGE", "LLEN", "LINDEX", "LSET", "LINSERT",
-            "LREM", "LTRIM", "LMOVE", "BLPOP", "BRPOP"
+            "LREM", "LTRIM", "LMOVE", "BLPOP", "BRPOP", "LMPOP", "BLMPOP", "BLMOVE", "LPOS"
         ]
     );
     add!(
@@ -377,6 +377,10 @@ fn build_categories() -> HashMap<String, HashSet<String>> {
             "LMOVE",
             "BLPOP",
             "BRPOP",
+            "LMPOP",
+            "BLMPOP",
+            "BLMOVE",
+            "LPOS",
             "HSET",
             "HMSET",
             "HDEL",
@@ -514,6 +518,10 @@ fn build_categories() -> HashMap<String, HashSet<String>> {
             "SORT",
             "BLPOP",
             "BRPOP",
+            "LMPOP",
+            "BLMPOP",
+            "BLMOVE",
+            "LPOS",
             "SUNION",
             "SINTER",
             "SDIFF",

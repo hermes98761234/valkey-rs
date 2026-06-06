@@ -52,6 +52,7 @@ assert_eq "bar" GET foo
 # SET with NX (only if not exists)
 assert_ok SET nx_key value NX
 # SET with NX on existing key returns nil (empty)
+$CLI SET existing pre_existing_value >/dev/null
 nx_result=$($CLI SET existing value NX 2>/dev/null)
 [ -z "$nx_result" ] && ((PASS++)) || { echo "FAIL: SET NX on existing => '$nx_result' != ''"; ((FAIL++)); }
 
@@ -93,7 +94,7 @@ assert_ok SET counter 10
 assert_eq "11" INCR counter
 assert_eq "10" DECR counter
 assert_eq "15" INCRBY counter 5
-assert_eq "12" DECBY counter 3
+assert_eq "12" DECRBY counter 3
 
 # INCRBYFLOAT
 assert_eq "1.5" INCRBYFLOAT fkey 1.5

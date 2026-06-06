@@ -66,7 +66,7 @@ assert_eq "0" SREM myset "z"
 assert_eq "2" SCARD myset
 
 # SPOP (returns the popped element or nil if set is empty)
-assert_eq "2" SADD pset "x" "y" "z"
+assert_eq "3" SADD pset "x" "y" "z"
 pset_size=$($CLI SCARD pset 2>/dev/null)
 [ "$pset_size" = "3" ] && ((PASS++)) || true
 popped=$($CLI SPOP pset 2>/dev/null)

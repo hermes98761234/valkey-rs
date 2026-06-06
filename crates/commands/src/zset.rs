@@ -2,6 +2,7 @@ use bytes::Bytes;
 use ordered_float::OrderedFloat;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
+use std::time::Duration;
 use valkey_proto::RespValue;
 use valkey_storage::{DataType, Store, ZSetData};
 
@@ -1358,6 +1359,637 @@ pub fn zrangestore(db: &Db, args: &[Bytes]) -> Result<RespValue, String> {
     Ok(RespValue::Integer(count as i64))
 }
 
+// ZDIFF numkeys key [key ...] [WITHSCORES]
+pub fn zdiff(db: &Db, args: &[Bytes]) -> Result<RespValue, String> {
+    if args.len() < 2 {
+        return Err("ERR wrong number of arguments for 'zdiff' command".into());
+    }
+    let numkeys: usize = str_from_bytes(&args[0])?
+        .parse()
+        .map_err(|_| "ERR value is not an integer or out of range")?;
+    if args.len() < 1 + numkeys {
+        return Err("ERR syntax error".into());
+    }
+    let mut idx = 1 + numkeys;
+    let ws = if idx < args.len() {
+        let v = std::str::from_utf8(&args[idx])
+            .map_err(|_| "ERR syntax error")?
+            .eq_ignore_ascii_case("WITHSCORES");
+        if v {
+            idx += 1;
+        }
+        v
+    } else {
+        false
+    };
+    if idx != args.len() {
+        return Err("ERR syntax error".into());
+    }
+    let sets: Vec<ZSetData> = (0..numkeys)
+        .filter_map(|i| get_zset(db, str_from_bytes(&args[1 + i]).ok()?))
+        .collect();
+    let entries: Vec<(Bytes, f64)> = if let Some(first) = sets.first() {
+        zset_entries(first)
+            .into_iter()
+            .filter(|(m, _)| !sets[1..].iter().any(|st| st.members.contains_key(m)))
+            .collect()
+    } else {
+        Vec::new()
+    };
+    if ws {
+        Ok(RespValue::Array(Some(
+            entries
+                .into_iter()
+                .flat_map(|(m, s)| {
+                    vec![
+                        RespValue::BulkString(Some(m)),
+                        RespValue::BulkString(Some(Bytes::from(format!("{s}")))),
+                    ]
+                })
+                .collect(),
+        )))
+    } else {
+        Ok(RespValue::Array(Some(
+            entries
+                .into_iter()
+                .map(|(m, _)| RespValue::BulkString(Some(m)))
+                .collect(),
+        )))
+    }
+}
+
+// ZINTER numkeys key [key ...] [WEIGHTS ...] [AGGREGATE SUM|MIN|MAX] [WITHSCORES]
+pub fn zinter(db: &Db, args: &[Bytes]) -> Result<RespValue, String> {
+    if args.len() < 2 {
+        return Err("ERR wrong number of arguments for 'zinter' command".into());
+    }
+    let numkeys: usize = str_from_bytes(&args[0])?
+        .parse()
+        .map_err(|_| "ERR value is not an integer or out of range")?;
+    if args.len() < 1 + numkeys {
+        return Err("ERR syntax error".into());
+    }
+    let mut idx = 1 + numkeys;
+    let mut weights = vec![1.0f64; numkeys];
+    let mut agg = "SUM";
+    let mut ws = false;
+    while idx < args.len() {
+        match str_from_bytes(&args[idx])?.to_ascii_uppercase().as_str() {
+            "WEIGHTS" => {
+                for i in 0..numkeys {
+                    weights[i] = parse_score(&args[idx + 1 + i])?;
+                }
+                idx += 1 + numkeys;
+            }
+            "AGGREGATE" => {
+                agg = match str_from_bytes(&args[idx + 1])?.to_ascii_uppercase().as_str() {
+                    "SUM" | "MIN" | "MAX" => str_from_bytes(&args[idx + 1])?.to_ascii_uppercase().leak(),
+                    _ => return Err("ERR syntax error".into()),
+                };
+                idx += 2;
+            }
+            "WITHSCORES" => {
+                ws = true;
+                idx += 1;
+            }
+            _ => return Err("ERR syntax error".into()),
+        }
+    }
+    let sets: Vec<ZSetData> = (0..numkeys)
+        .filter_map(|i| get_zset(db, str_from_bytes(&args[1 + i]).ok()?))
+        .collect();
+    if sets.len() != numkeys {
+        return Ok(RespValue::Array(Some(vec![])));
+    }
+    let mut entries: Vec<(Bytes, f64)> = Vec::new();
+    if let Some(first) = sets.first() {
+        for (m, _s) in &first.members {
+            if sets.iter().all(|st| st.members.contains_key(m)) {
+                let scores: Vec<f64> = sets
+                    .iter()
+                    .enumerate()
+                    .map(|(i, st)| st.members.get(m).unwrap().0 * weights[i])
+                    .collect();
+                let score = match agg {
+                    "SUM" => scores.iter().sum(),
+                    "MIN" => scores.into_iter().fold(f64::INFINITY, f64::min),
+                    _ => scores.into_iter().fold(f64::NEG_INFINITY, f64::max),
+                };
+                entries.push((m.clone(), score));
+            }
+        }
+    }
+    if ws {
+        Ok(RespValue::Array(Some(
+            entries
+                .into_iter()
+                .flat_map(|(m, s)| {
+                    vec![
+                        RespValue::BulkString(Some(m)),
+                        RespValue::BulkString(Some(Bytes::from(format!("{s}")))),
+                    ]
+                })
+                .collect(),
+        )))
+    } else {
+        Ok(RespValue::Array(Some(
+            entries
+                .into_iter()
+                .map(|(m, _)| RespValue::BulkString(Some(m)))
+                .collect(),
+        )))
+    }
+}
+
+// ZUNION numkeys key [key ...] [WEIGHTS ...] [AGGREGATE SUM|MIN|MAX] [WITHSCORES]
+pub fn zunion(db: &Db, args: &[Bytes]) -> Result<RespValue, String> {
+    if args.len() < 2 {
+        return Err("ERR wrong number of arguments for 'zunion' command".into());
+    }
+    let numkeys: usize = str_from_bytes(&args[0])?
+        .parse()
+        .map_err(|_| "ERR value is not an integer or out of range")?;
+    if args.len() < 1 + numkeys {
+        return Err("ERR syntax error".into());
+    }
+    let mut idx = 1 + numkeys;
+    let mut weights = vec![1.0f64; numkeys];
+    let mut agg = "SUM";
+    let mut ws = false;
+    while idx < args.len() {
+        match str_from_bytes(&args[idx])?.to_ascii_uppercase().as_str() {
+            "WEIGHTS" => {
+                for i in 0..numkeys {
+                    weights[i] = parse_score(&args[idx + 1 + i])?;
+                }
+                idx += 1 + numkeys;
+            }
+            "AGGREGATE" => {
+                agg = match str_from_bytes(&args[idx + 1])?.to_ascii_uppercase().as_str() {
+                    "SUM" | "MIN" | "MAX" => str_from_bytes(&args[idx + 1])?.to_ascii_uppercase().leak(),
+                    _ => return Err("ERR syntax error".into()),
+                };
+                idx += 2;
+            }
+            "WITHSCORES" => {
+                ws = true;
+                idx += 1;
+            }
+            _ => return Err("ERR syntax error".into()),
+        }
+    }
+    let mut all: HashMap<Bytes, Vec<f64>> = HashMap::new();
+    for i in 0..numkeys {
+        if let Some(zset) = get_zset(db, str_from_bytes(&args[1 + i])?) {
+            for (m, s) in &zset.members {
+                all.entry(m.clone()).or_default().push(s.0 * weights[i]);
+            }
+        }
+    }
+    let mut entries: Vec<(Bytes, f64)> = all
+        .into_iter()
+        .map(|(m, scores)| {
+            let score = match agg {
+                "SUM" => scores.iter().sum(),
+                "MIN" => scores.into_iter().fold(f64::INFINITY, f64::min),
+                _ => scores.into_iter().fold(f64::NEG_INFINITY, f64::max),
+            };
+            (m, score)
+        })
+        .collect();
+    entries.sort_by(|a, b| {
+        a.1.partial_cmp(&b.1)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.0.cmp(&b.0))
+    });
+    if ws {
+        Ok(RespValue::Array(Some(
+            entries
+                .into_iter()
+                .flat_map(|(m, s)| {
+                    vec![
+                        RespValue::BulkString(Some(m)),
+                        RespValue::BulkString(Some(Bytes::from(format!("{s}")))),
+                    ]
+                })
+                .collect(),
+        )))
+    } else {
+        Ok(RespValue::Array(Some(
+            entries
+                .into_iter()
+                .map(|(m, _)| RespValue::BulkString(Some(m)))
+                .collect(),
+        )))
+    }
+}
+
+// ZMPOP numkeys key [key ...] MIN|MAX [COUNT count]
+pub fn zmpop(db: &Db, args: &[Bytes]) -> Result<RespValue, String> {
+    if args.len() < 3 {
+        return Err("ERR wrong number of arguments for 'zmpop' command".into());
+    }
+    let numkeys: usize = str_from_bytes(&args[0])?
+        .parse()
+        .map_err(|_| "ERR value is not an integer or out of range")?;
+    if args.len() < 2 + numkeys {
+        return Err("ERR syntax error".into());
+    }
+    let mut idx = 1 + numkeys;
+    let is_min = match str_from_bytes(&args[idx])?.to_ascii_uppercase().as_str() {
+        "MIN" => true,
+        "MAX" => false,
+        _ => return Err("ERR syntax error".into()),
+    };
+    idx += 1;
+    let mut count: usize = 1;
+    if idx < args.len() {
+        if str_from_bytes(&args[idx])?.to_ascii_uppercase() == "COUNT" {
+            count = str_from_bytes(&args[idx + 1])?
+                .parse()
+                .map_err(|_| "ERR value is not an integer or out of range")?;
+            idx += 2;
+        }
+    }
+    if idx != args.len() {
+        return Err("ERR syntax error".into());
+    }
+    // Find the first non-empty zset
+    for i in 0..numkeys {
+        let key = str_from_bytes(&args[1 + i])?;
+        if let Some(mut zset) = get_zset(db, key) {
+            if zset.is_empty() {
+                continue;
+            }
+            let mut entries = zset_entries(&zset);
+            if !is_min {
+                entries.reverse();
+            }
+            let count = count.min(entries.len());
+            let popped: Vec<(Bytes, f64)> = entries.drain(..count).collect();
+            for (m, _) in &popped {
+                zset.members.remove(m);
+            }
+            rebuild_scores(&mut zset);
+            set_zset(db, key, zset);
+            let members: Vec<RespValue> = popped
+                .into_iter()
+                .flat_map(|(m, s)| {
+                    vec![
+                        RespValue::BulkString(Some(m)),
+                        RespValue::BulkString(Some(Bytes::from(format!("{s}")))),
+                    ]
+                })
+                .collect();
+            return Ok(RespValue::Array(Some(vec![
+                RespValue::BulkString(Some(Bytes::from(key.to_string()))),
+                RespValue::Array(Some(members)),
+            ])));
+        }
+    }
+    Ok(RespValue::BulkString(None))
+}
+
+// BZMPOP timeout numkeys key [key ...] MIN|MAX [COUNT count]
+pub async fn bzmpop(db: &Db, args: &[Bytes]) -> RespValue {
+    if args.len() < 4 {
+        return RespValue::Error("ERR wrong number of arguments for 'bzmpop' command".into());
+    }
+    let timeout = match parse_score(&args[0]) {
+        Ok(v) => v,
+        Err(e) => return RespValue::Error(e),
+    };
+    let numkeys: usize = match str_from_bytes(&args[1]).and_then(|s| s.parse().map_err(|_| "ERR value is not an integer or out of range".to_string())) {
+        Ok(v) => v,
+        Err(e) => return RespValue::Error(e),
+    };
+    if args.len() < 3 + numkeys {
+        return RespValue::Error("ERR syntax error".into());
+    }
+    let mut idx = 2 + numkeys;
+    let is_min = match str_from_bytes(&args[idx]).map(|s| s.to_ascii_uppercase()) {
+        Ok(s) if s == "MIN" => true,
+        Ok(s) if s == "MAX" => false,
+        _ => return RespValue::Error("ERR syntax error".into()),
+    };
+    idx += 1;
+    let mut count: usize = 1;
+    if idx < args.len() {
+        if str_from_bytes(&args[idx]).map(|s| s.to_ascii_uppercase()) == Ok("COUNT".to_string()) {
+            count = match str_from_bytes(&args[idx + 1]).and_then(|s| s.parse().map_err(|_| "ERR value is not an integer or out of range".to_string())) {
+                Ok(v) => v,
+                Err(e) => return RespValue::Error(e),
+            };
+            idx += 2;
+        }
+    }
+    if idx != args.len() {
+        return RespValue::Error("ERR syntax error".into());
+    }
+    let keys: Vec<String> = (0..numkeys)
+        .filter_map(|i| str_from_bytes(&args[2 + i]).ok())
+        .map(|s| s.to_string())
+        .collect();
+
+    // Fast path: try non-blocking first
+    for key in &keys {
+        if let Some(mut zset) = get_zset(db, key) {
+            if zset.is_empty() {
+                continue;
+            }
+            let mut entries = zset_entries(&zset);
+            if !is_min {
+                entries.reverse();
+            }
+            let count = count.min(entries.len());
+            let popped: Vec<(Bytes, f64)> = entries.drain(..count).collect();
+            for (m, _) in &popped {
+                zset.members.remove(m);
+            }
+            rebuild_scores(&mut zset);
+            set_zset(db, key, zset);
+            let members: Vec<RespValue> = popped
+                .into_iter()
+                .flat_map(|(m, s)| {
+                    vec![
+                        RespValue::BulkString(Some(m)),
+                        RespValue::BulkString(Some(Bytes::from(format!("{s}")))),
+                    ]
+                })
+                .collect();
+            return RespValue::Array(Some(vec![
+                RespValue::BulkString(Some(Bytes::from(key.clone()))),
+                RespValue::Array(Some(members)),
+            ]));
+        }
+    }
+
+    // Timeout 0 means block forever
+    if timeout == 0.0 {
+        return bzmpop_block_forever(db, &keys, is_min, count).await;
+    }
+
+    // Blocking path with timeout
+    let dur = std::time::Duration::from_secs_f64(timeout);
+    let result = tokio::time::timeout(dur, bzmpop_block_forever(db, &keys, is_min, count)).await;
+    match result {
+        Ok(v) => v,
+        Err(_) => RespValue::BulkString(None),
+    }
+}
+
+async fn bzmpop_block_forever(
+    db: &Db,
+    keys: &[String],
+    is_min: bool,
+    count: usize,
+) -> RespValue {
+    let mut receivers: Vec<(String, std::sync::mpsc::Receiver<()>)> = Vec::new();
+    for key in keys {
+        receivers.push((key.clone(), db.watch(&Bytes::from(key.clone()))));
+    }
+
+    loop {
+        for (key, _) in &receivers {
+            if let Some(mut zset) = get_zset(db, key) {
+                if !zset.is_empty() {
+                    let mut entries = zset_entries(&zset);
+                    if !is_min {
+                        entries.reverse();
+                    }
+                    let count = count.min(entries.len());
+                    let popped: Vec<(Bytes, f64)> = entries.drain(..count).collect();
+                    for (m, _) in &popped {
+                        zset.members.remove(m);
+                    }
+                    rebuild_scores(&mut zset);
+                    set_zset(db, key, zset);
+                    let members: Vec<RespValue> = popped
+                        .into_iter()
+                        .flat_map(|(m, s)| {
+                            vec![
+                                RespValue::BulkString(Some(m)),
+                                RespValue::BulkString(Some(Bytes::from(format!("{s}")))),
+                            ]
+                        })
+                        .collect();
+                    return RespValue::Array(Some(vec![
+                        RespValue::BulkString(Some(Bytes::from(key.clone()))),
+                        RespValue::Array(Some(members)),
+                    ]));
+                }
+            }
+        }
+
+        let mut done = false;
+        for (_, rx) in &receivers {
+            if rx.try_recv().is_ok() {
+                done = true;
+                break;
+            }
+        }
+        if !done {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }
+}
+
+// BZPOPMIN key [key ...] timeout
+pub async fn bzpopmin(db: &Db, args: &[Bytes]) -> RespValue {
+    if args.len() < 2 {
+        return RespValue::Error("ERR wrong number of arguments for 'bzpopmin' command".into());
+    }
+    let timeout = match parse_score(&args[args.len() - 1]) {
+        Ok(v) => v,
+        Err(e) => return RespValue::Error(e),
+    };
+    let key_count = args.len() - 1;
+
+    // Fast path: try non-blocking first
+    for i in 0..key_count {
+        let key = match str_from_bytes(&args[i]) {
+            Ok(v) => v,
+            Err(e) => return RespValue::Error(e),
+        };
+        if let Some(mut zset) = get_zset(db, key) {
+            if zset.is_empty() {
+                continue;
+            }
+            let mut entries = zset_entries(&zset);
+            if let Some((m, s)) = entries.first() {
+                let m = m.clone();
+                let s = *s;
+                zset.members.remove(&m);
+                rebuild_scores(&mut zset);
+                set_zset(db, key, zset);
+                return RespValue::Array(Some(vec![
+                    RespValue::BulkString(Some(Bytes::from(key.to_string()))),
+                    RespValue::BulkString(Some(m)),
+                    RespValue::BulkString(Some(Bytes::from(format!("{s}")))),
+                ]));
+            }
+        }
+    }
+
+    // Timeout 0 means block forever
+    if timeout == 0.0 {
+        return bzpopmin_block_forever(db, args, key_count).await;
+    }
+
+    // Blocking path with timeout
+    let dur = Duration::from_secs_f64(timeout);
+    let result =
+        tokio::time::timeout(dur, bzpopmin_block_forever(db, args, key_count)).await;
+    match result {
+        Ok(v) => v,
+        Err(_) => RespValue::BulkString(None),
+    }
+}
+
+async fn bzpopmin_block_forever(
+    db: &Db,
+    args: &[Bytes],
+    key_count: usize,
+) -> RespValue {
+    let mut receivers: Vec<(String, std::sync::mpsc::Receiver<()>)> = Vec::new();
+    for i in 0..key_count {
+        let key = str_from_bytes(&args[i]).unwrap_or_default().to_string();
+        receivers.push((key.clone(), db.watch(&Bytes::from(key))));
+    }
+
+    loop {
+        for (key, _) in &receivers {
+            if let Some(mut zset) = get_zset(db, key) {
+                if !zset.is_empty() {
+                    let mut entries = zset_entries(&zset);
+                    if let Some((m, s)) = entries.first() {
+                        let m = m.clone();
+                        let s = *s;
+                        zset.members.remove(&m);
+                        rebuild_scores(&mut zset);
+                        set_zset(db, key, zset);
+                        return RespValue::Array(Some(vec![
+                            RespValue::BulkString(Some(Bytes::from(key.clone()))),
+                            RespValue::BulkString(Some(m)),
+                            RespValue::BulkString(Some(Bytes::from(format!("{s}")))),
+                        ]));
+                    }
+                }
+            }
+        }
+
+        let mut done = false;
+        for (_, rx) in &receivers {
+            if rx.try_recv().is_ok() {
+                done = true;
+                break;
+            }
+        }
+        if !done {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }
+}
+
+// BZPOPMAX key [key ...] timeout
+pub async fn bzpopmax(db: &Db, args: &[Bytes]) -> RespValue {
+    if args.len() < 2 {
+        return RespValue::Error("ERR wrong number of arguments for 'bzpopmax' command".into());
+    }
+    let timeout = match parse_score(&args[args.len() - 1]) {
+        Ok(v) => v,
+        Err(e) => return RespValue::Error(e),
+    };
+    let key_count = args.len() - 1;
+
+    // Fast path: try non-blocking first
+    for i in 0..key_count {
+        let key = match str_from_bytes(&args[i]) {
+            Ok(v) => v,
+            Err(e) => return RespValue::Error(e),
+        };
+        if let Some(mut zset) = get_zset(db, key) {
+            if zset.is_empty() {
+                continue;
+            }
+            let mut entries = zset_entries(&zset);
+            entries.reverse();
+            if let Some((m, s)) = entries.first() {
+                let m = m.clone();
+                let s = *s;
+                zset.members.remove(&m);
+                rebuild_scores(&mut zset);
+                set_zset(db, key, zset);
+                return RespValue::Array(Some(vec![
+                    RespValue::BulkString(Some(Bytes::from(key.to_string()))),
+                    RespValue::BulkString(Some(m)),
+                    RespValue::BulkString(Some(Bytes::from(format!("{s}")))),
+                ]));
+            }
+        }
+    }
+
+    // Timeout 0 means block forever
+    if timeout == 0.0 {
+        return bzpopmax_block_forever(db, args, key_count).await;
+    }
+
+    // Blocking path with timeout
+    let dur = Duration::from_secs_f64(timeout);
+    let result =
+        tokio::time::timeout(dur, bzpopmax_block_forever(db, args, key_count)).await;
+    match result {
+        Ok(v) => v,
+        Err(_) => RespValue::BulkString(None),
+    }
+}
+
+async fn bzpopmax_block_forever(
+    db: &Db,
+    args: &[Bytes],
+    key_count: usize,
+) -> RespValue {
+    let mut receivers: Vec<(String, std::sync::mpsc::Receiver<()>)> = Vec::new();
+    for i in 0..key_count {
+        let key = str_from_bytes(&args[i]).unwrap_or_default().to_string();
+        receivers.push((key.clone(), db.watch(&Bytes::from(key))));
+    }
+
+    loop {
+        for (key, _) in &receivers {
+            if let Some(mut zset) = get_zset(db, key) {
+                if !zset.is_empty() {
+                    let mut entries = zset_entries(&zset);
+                    entries.reverse();
+                    if let Some((m, s)) = entries.first() {
+                        let m = m.clone();
+                        let s = *s;
+                        zset.members.remove(&m);
+                        rebuild_scores(&mut zset);
+                        set_zset(db, key, zset);
+                        return RespValue::Array(Some(vec![
+                            RespValue::BulkString(Some(Bytes::from(key.clone()))),
+                            RespValue::BulkString(Some(m)),
+                            RespValue::BulkString(Some(Bytes::from(format!("{s}")))),
+                        ]));
+                    }
+                }
+            }
+        }
+
+        let mut done = false;
+        for (_, rx) in &receivers {
+            if rx.try_recv().is_ok() {
+                done = true;
+                break;
+            }
+        }
+        if !done {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }
+}
+
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -1859,5 +2491,420 @@ mod tests {
         let args = vec![bs("myset"), bs("-3"), bs("a")];
         let result = zincrby(&db, &args).unwrap();
         assert_eq!(result, RespValue::BulkString(Some(bs("2"))));
+    }
+
+    #[tokio::test]
+    async fn test_zdiff_basic() {
+        let db = test_store();
+        {
+            let mut z1 = ZSetData::new();
+            z1.add(bs("a"), 1.0);
+            z1.add(bs("b"), 2.0);
+            z1.add(bs("c"), 3.0);
+            set_zset(&db, "z1", z1);
+        }
+        {
+            let mut z2 = ZSetData::new();
+            z2.add(bs("b"), 2.0);
+            set_zset(&db, "z2", z2);
+        }
+        let args = vec![bs("2"), bs("z1"), bs("z2")];
+        let result = zdiff(&db, &args).unwrap();
+        assert_eq!(
+            result,
+            RespValue::Array(Some(vec![
+                RespValue::BulkString(Some(bs("a"))),
+                RespValue::BulkString(Some(bs("c"))),
+            ]))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_zdiff_withscores() {
+        let db = test_store();
+        {
+            let mut z1 = ZSetData::new();
+            z1.add(bs("a"), 1.0);
+            z1.add(bs("b"), 2.0);
+            z1.add(bs("c"), 3.0);
+            set_zset(&db, "z1", z1);
+        }
+        {
+            let mut z2 = ZSetData::new();
+            z2.add(bs("b"), 2.0);
+            set_zset(&db, "z2", z2);
+        }
+        let args = vec![bs("2"), bs("z1"), bs("z2"), bs("WITHSCORES")];
+        let result = zdiff(&db, &args).unwrap();
+        // diff = {a, c} (b is in z2)
+        assert_eq!(
+            result,
+            RespValue::Array(Some(vec![
+                RespValue::BulkString(Some(bs("a"))),
+                RespValue::BulkString(Some(bs("1"))),
+                RespValue::BulkString(Some(bs("c"))),
+                RespValue::BulkString(Some(bs("3"))),
+            ]))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_zdiff_no_common() {
+        let db = test_store();
+        {
+            let mut z1 = ZSetData::new();
+            z1.add(bs("a"), 1.0);
+            set_zset(&db, "z1", z1);
+        }
+        {
+            let mut z2 = ZSetData::new();
+            z2.add(bs("b"), 2.0);
+            set_zset(&db, "z2", z2);
+        }
+        let args = vec![bs("2"), bs("z1"), bs("z2")];
+        let result = zdiff(&db, &args).unwrap();
+        assert_eq!(
+            result,
+            RespValue::Array(Some(vec![RespValue::BulkString(Some(bs("a")))]))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_zinter_basic() {
+        let db = test_store();
+        {
+            let mut z1 = ZSetData::new();
+            z1.add(bs("a"), 1.0);
+            z1.add(bs("b"), 2.0);
+            set_zset(&db, "z1", z1);
+        }
+        {
+            let mut z2 = ZSetData::new();
+            z2.add(bs("b"), 3.0);
+            z2.add(bs("c"), 4.0);
+            set_zset(&db, "z2", z2);
+        }
+        let args = vec![bs("2"), bs("z1"), bs("z2")];
+        let result = zinter(&db, &args).unwrap();
+        assert_eq!(
+            result,
+            RespValue::Array(Some(vec![RespValue::BulkString(Some(bs("b")))]))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_zinter_withscores() {
+        let db = test_store();
+        {
+            let mut z1 = ZSetData::new();
+            z1.add(bs("a"), 1.0);
+            z1.add(bs("b"), 2.0);
+            set_zset(&db, "z1", z1);
+        }
+        {
+            let mut z2 = ZSetData::new();
+            z2.add(bs("b"), 3.0);
+            z2.add(bs("c"), 4.0);
+            set_zset(&db, "z2", z2);
+        }
+        let args = vec![bs("2"), bs("z1"), bs("z2"), bs("WITHSCORES")];
+        let result = zinter(&db, &args).unwrap();
+        assert_eq!(
+            result,
+            RespValue::Array(Some(vec![
+                RespValue::BulkString(Some(bs("b"))),
+                RespValue::BulkString(Some(bs("5"))),
+            ]))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_zinter_weights() {
+        let db = test_store();
+        {
+            let mut z1 = ZSetData::new();
+            z1.add(bs("a"), 1.0);
+            z1.add(bs("b"), 2.0);
+            set_zset(&db, "z1", z1);
+        }
+        {
+            let mut z2 = ZSetData::new();
+            z2.add(bs("b"), 3.0);
+            set_zset(&db, "z2", z2);
+        }
+        let args = vec![
+            bs("2"), bs("z1"), bs("z2"), bs("WEIGHTS"), bs("2"), bs("3"), bs("WITHSCORES"),
+        ];
+        let result = zinter(&db, &args).unwrap();
+        // b: 2*2 + 3*3 = 13
+        match &result {
+            RespValue::Array(Some(r)) => {
+                assert_eq!(r.len(), 2); // member + score
+                assert_eq!(r[0], RespValue::BulkString(Some(bs("b"))));
+                assert_eq!(r[1], RespValue::BulkString(Some(bs("13"))));
+            }
+            _ => panic!("Expected array"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_zinter_aggregate_min() {
+        let db = test_store();
+        {
+            let mut z1 = ZSetData::new();
+            z1.add(bs("a"), 1.0);
+            z1.add(bs("b"), 10.0);
+            set_zset(&db, "z1", z1);
+        }
+        {
+            let mut z2 = ZSetData::new();
+            z2.add(bs("b"), 20.0);
+            set_zset(&db, "z2", z2);
+        }
+        let args = vec![
+            bs("2"), bs("z1"), bs("z2"), bs("AGGREGATE"), bs("MIN"), bs("WITHSCORES"),
+        ];
+        let result = zinter(&db, &args).unwrap();
+        // b: min(10, 20) = 10
+        match &result {
+            RespValue::Array(Some(r)) => {
+                assert_eq!(r[0], RespValue::BulkString(Some(bs("b"))));
+                assert_eq!(r[1], RespValue::BulkString(Some(bs("10"))));
+            }
+            _ => panic!("Expected array"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_zunion_basic() {
+        let db = test_store();
+        {
+            let mut z1 = ZSetData::new();
+            z1.add(bs("a"), 1.0);
+            z1.add(bs("b"), 2.0);
+            set_zset(&db, "z1", z1);
+        }
+        {
+            let mut z2 = ZSetData::new();
+            z2.add(bs("b"), 3.0);
+            z2.add(bs("c"), 4.0);
+            set_zset(&db, "z2", z2);
+        }
+        let args = vec![bs("2"), bs("z1"), bs("z2")];
+        let result = zunion(&db, &args).unwrap();
+        // sorted by score: a:1, c:4, b:5
+        assert_eq!(
+            result,
+            RespValue::Array(Some(vec![
+                RespValue::BulkString(Some(bs("a"))),
+                RespValue::BulkString(Some(bs("c"))),
+                RespValue::BulkString(Some(bs("b"))),
+            ]))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_zunion_withscores() {
+        let db = test_store();
+        {
+            let mut z1 = ZSetData::new();
+            z1.add(bs("a"), 1.0);
+            z1.add(bs("b"), 2.0);
+            set_zset(&db, "z1", z1);
+        }
+        {
+            let mut z2 = ZSetData::new();
+            z2.add(bs("b"), 3.0);
+            z2.add(bs("c"), 4.0);
+            set_zset(&db, "z2", z2);
+        }
+        let args = vec![bs("2"), bs("z1"), bs("z2"), bs("WITHSCORES")];
+        let result = zunion(&db, &args).unwrap();
+        // sorted by score: a:1, c:4, b:5
+        assert_eq!(
+            result,
+            RespValue::Array(Some(vec![
+                RespValue::BulkString(Some(bs("a"))),
+                RespValue::BulkString(Some(bs("1"))),
+                RespValue::BulkString(Some(bs("c"))),
+                RespValue::BulkString(Some(bs("4"))),
+                RespValue::BulkString(Some(bs("b"))),
+                RespValue::BulkString(Some(bs("5"))),
+            ]))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_zmpop_min() {
+        let db = test_store();
+        {
+            let mut z1 = ZSetData::new();
+            z1.add(bs("a"), 1.0);
+            z1.add(bs("b"), 2.0);
+            z1.add(bs("c"), 3.0);
+            set_zset(&db, "z1", z1);
+        }
+        let args = vec![bs("1"), bs("z1"), bs("MIN")];
+        let result = zmpop(&db, &args).unwrap();
+        match result {
+            RespValue::Array(Some(items)) => {
+                assert_eq!(items.len(), 2);
+                assert_eq!(items[0], RespValue::BulkString(Some(bs("z1"))));
+                match &items[1] {
+                    RespValue::Array(Some(members)) => {
+                        assert_eq!(members.len(), 2); // one member + score
+                        assert_eq!(members[0], RespValue::BulkString(Some(bs("a"))));
+                        assert_eq!(members[1], RespValue::BulkString(Some(bs("1"))));
+                    }
+                    _ => panic!("Expected array of members"),
+                }
+            }
+            _ => panic!("Expected array"),
+        }
+        // Verify "a" was removed
+        assert_eq!(get_zset(&db, "z1").unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_zmpop_max() {
+        let db = test_store();
+        {
+            let mut z1 = ZSetData::new();
+            z1.add(bs("a"), 1.0);
+            z1.add(bs("b"), 2.0);
+            z1.add(bs("c"), 3.0);
+            set_zset(&db, "z1", z1);
+        }
+        let args = vec![bs("1"), bs("z1"), bs("MAX")];
+        let result = zmpop(&db, &args).unwrap();
+        match &result {
+            RespValue::Array(Some(items)) => {
+                assert_eq!(items[0], RespValue::BulkString(Some(bs("z1"))));
+                match &items[1] {
+                    RespValue::Array(Some(members)) => {
+                        assert_eq!(members[0], RespValue::BulkString(Some(bs("c"))));
+                        assert_eq!(members[1], RespValue::BulkString(Some(bs("3"))));
+                    }
+                    _ => panic!("Expected array"),
+                }
+            }
+            _ => panic!("Expected array"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_zmpop_count() {
+        let db = test_store();
+        {
+            let mut z1 = ZSetData::new();
+            z1.add(bs("a"), 1.0);
+            z1.add(bs("b"), 2.0);
+            z1.add(bs("c"), 3.0);
+            set_zset(&db, "z1", z1);
+        }
+        let args = vec![bs("1"), bs("z1"), bs("MIN"), bs("COUNT"), bs("2")];
+        let result = zmpop(&db, &args).unwrap();
+        match &result {
+            RespValue::Array(Some(items)) => {
+                match &items[1] {
+                    RespValue::Array(Some(members)) => {
+                        assert_eq!(members.len(), 4); // 2 members * 2 (member + score)
+                    }
+                    _ => panic!("Expected array"),
+                }
+            }
+            _ => panic!("Expected array"),
+        }
+        assert_eq!(get_zset(&db, "z1").unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_zmpop_empty() {
+        let db = test_store();
+        let args = vec![bs("1"), bs("nonexistent"), bs("MIN")];
+        let result = zmpop(&db, &args).unwrap();
+        assert_eq!(result, RespValue::BulkString(None));
+    }
+
+    #[tokio::test]
+    async fn test_bzpopmin_fast_path() {
+        let db = db_with_zset(vec![("a", 1.0), ("b", 2.0)]);
+        let args = vec![bs("myset"), bs("0")];
+        let result = bzpopmin(&db, &args).await;
+        assert_eq!(
+            result,
+            RespValue::Array(Some(vec![
+                RespValue::BulkString(Some(bs("myset"))),
+                RespValue::BulkString(Some(bs("a"))),
+                RespValue::BulkString(Some(bs("1"))),
+            ]))
+        );
+        assert_eq!(get_zset(&db, "myset").unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_bzpopmax_fast_path() {
+        let db = db_with_zset(vec![("a", 1.0), ("b", 2.0)]);
+        let args = vec![bs("myset"), bs("0")];
+        let result = bzpopmax(&db, &args).await;
+        assert_eq!(
+            result,
+            RespValue::Array(Some(vec![
+                RespValue::BulkString(Some(bs("myset"))),
+                RespValue::BulkString(Some(bs("b"))),
+                RespValue::BulkString(Some(bs("2"))),
+            ]))
+        );
+        assert_eq!(get_zset(&db, "myset").unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_bzpopmin_timeout() {
+        let db = test_store();
+        let args = vec![bs("nonexistent"), bs("0.1")];
+        let result = bzpopmin(&db, &args).await;
+        assert_eq!(result, RespValue::BulkString(None));
+    }
+
+    #[tokio::test]
+    async fn test_bzpopmax_timeout() {
+        let db = test_store();
+        let args = vec![bs("nonexistent"), bs("0.1")];
+        let result = bzpopmax(&db, &args).await;
+        assert_eq!(result, RespValue::BulkString(None));
+    }
+
+    #[tokio::test]
+    async fn test_bzmpop_fast_path() {
+        let db = test_store();
+        {
+            let mut z1 = ZSetData::new();
+            z1.add(bs("a"), 1.0);
+            z1.add(bs("b"), 2.0);
+            set_zset(&db, "z1", z1);
+        }
+        let args = vec![bs("0"), bs("1"), bs("z1"), bs("MIN")];
+        let result = bzmpop(&db, &args).await;
+        match &result {
+            RespValue::Array(Some(items)) => {
+                assert_eq!(items[0], RespValue::BulkString(Some(bs("z1"))));
+                match &items[1] {
+                    RespValue::Array(Some(members)) => {
+                        assert_eq!(members[0], RespValue::BulkString(Some(bs("a"))));
+                        assert_eq!(members[1], RespValue::BulkString(Some(bs("1"))));
+                    }
+                    _ => panic!("Expected array"),
+                }
+            }
+            _ => panic!("Expected array, got {:?}", result),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_bzmpop_timeout() {
+        let db = test_store();
+        let args = vec![bs("0.1"), bs("1"), bs("nonexistent"), bs("MIN")];
+        let result = bzmpop(&db, &args).await;
+        assert_eq!(result, RespValue::BulkString(None));
     }
 }

@@ -17,6 +17,7 @@ dashmap = { workspace = true }
 fastrand = "2"
 rand = "0.8"
 ordered-float = { workspace = true }
+lazy_static = "1"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt", "macros"] }

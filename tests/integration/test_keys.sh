@@ -156,7 +156,7 @@ else
 fi
 
 # SORT_RO (read-only sort)
-assert_ok LPUSH sortlist "3" "1" "2"
+assert_eq "3" LPUSH sortlist "3" "1" "2"
 assert_contains "1" SORT_RO sortlist
 assert_contains "2" SORT_RO sortlist
 assert_contains "3" SORT_RO sortlist

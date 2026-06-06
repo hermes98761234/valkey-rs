@@ -9,6 +9,7 @@ members = [
   "crates/pubsub",
   "crates/scripting",
   "crates/server",
+  "crates/sentinel",
 ]
 resolver = "2"
 

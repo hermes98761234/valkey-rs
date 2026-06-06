@@ -83,8 +83,8 @@ pub async fn cmd_watch(args: &[Bytes], client: Arc<RwLock<ClientCtx>>, store: &D
     for key in args {
         let client_clone = Arc::clone(&client);
         let rx = store.watch(key);
-        tokio::spawn(async move {
-            // Wait for notification
+        tokio::task::spawn_blocking(move || {
+            // Wait for notification (blocking recv moved off async thread)
             if rx.recv().is_ok() {
                 let mut c = client_clone.write().unwrap();
                 c.dirty = true;

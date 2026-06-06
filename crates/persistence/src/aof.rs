@@ -540,59 +540,59 @@ async fn replay_command(store: &Arc<Store>, cmd: &[Bytes]) -> Result<(), String>
             if args.len() < 2 {
                 return Err("wrong args".into());
             }
-            if let Some(entry) = store.get(&args[0]) {
-                if let DataType::String(existing) = &entry.data {
-                    let mut new_val = existing.to_vec();
-                    new_val.extend_from_slice(&args[1]);
-                    store.set(
-                        args[0].clone(),
-                        DataType::String(Bytes::from(new_val)),
-                        None,
-                    );
-                }
-            } else {
-                store.set(args[0].clone(), DataType::String(args[1].clone()), None);
-            }
+            let new_val = match store.get(&args[0]) {
+                Some(entry) => match &entry.data {
+                    DataType::String(existing) => {
+                        let mut v = existing.to_vec();
+                        drop(entry);
+                        v.extend_from_slice(&args[1]);
+                        v
+                    }
+                    _ => return Err("wrong type".into()),
+                },
+                None => args[1].to_vec(),
+            };
+            store.set(args[0].clone(), DataType::String(Bytes::from(new_val)), None);
         }
         "INCR" => {
             if args.is_empty() {
                 return Err("wrong args".into());
             }
-            if let Some(entry) = store.get(&args[0]) {
-                if let DataType::String(val) = &entry.data {
-                    let n: i64 = std::str::from_utf8(val)
-                        .map_err(|_| "not an integer")?
-                        .parse()
-                        .map_err(|_| "not an integer")?;
-                    store.set(
-                        args[0].clone(),
-                        DataType::String(Bytes::from((n + 1).to_string())),
-                        None,
-                    );
-                }
-            } else {
-                store.set(args[0].clone(), DataType::String(Bytes::from("1")), None);
-            }
+            let new_val = match store.get(&args[0]) {
+                Some(entry) => match &entry.data {
+                    DataType::String(val) => {
+                        let n: i64 = std::str::from_utf8(val)
+                            .map_err(|_| "not an integer")?
+                            .parse()
+                            .map_err(|_| "not an integer")?;
+                        drop(entry);
+                        (n + 1).to_string()
+                    }
+                    _ => return Err("wrong type".into()),
+                },
+                None => "1".to_string(),
+            };
+            store.set(args[0].clone(), DataType::String(Bytes::from(new_val)), None);
         }
         "DECR" => {
             if args.is_empty() {
                 return Err("wrong args".into());
             }
-            if let Some(entry) = store.get(&args[0]) {
-                if let DataType::String(val) = &entry.data {
-                    let n: i64 = std::str::from_utf8(val)
-                        .map_err(|_| "not an integer")?
-                        .parse()
-                        .map_err(|_| "not an integer")?;
-                    store.set(
-                        args[0].clone(),
-                        DataType::String(Bytes::from((n - 1).to_string())),
-                        None,
-                    );
-                }
-            } else {
-                store.set(args[0].clone(), DataType::String(Bytes::from("-1")), None);
-            }
+            let new_val = match store.get(&args[0]) {
+                Some(entry) => match &entry.data {
+                    DataType::String(val) => {
+                        let n: i64 = std::str::from_utf8(val)
+                            .map_err(|_| "not an integer")?
+                            .parse()
+                            .map_err(|_| "not an integer")?;
+                        drop(entry);
+                        (n - 1).to_string()
+                    }
+                    _ => return Err("wrong type".into()),
+                },
+                None => "-1".to_string(),
+            };
+            store.set(args[0].clone(), DataType::String(Bytes::from(new_val)), None);
         }
         "INCRBY" => {
             if args.len() < 2 {
@@ -602,25 +602,21 @@ async fn replay_command(store: &Arc<Store>, cmd: &[Bytes]) -> Result<(), String>
                 .map_err(|_| "bad increment")?
                 .parse()
                 .map_err(|_| "bad increment")?;
-            if let Some(entry) = store.get(&args[0]) {
-                if let DataType::String(val) = &entry.data {
-                    let n: i64 = std::str::from_utf8(val)
-                        .map_err(|_| "not an integer")?
-                        .parse()
-                        .map_err(|_| "not an integer")?;
-                    store.set(
-                        args[0].clone(),
-                        DataType::String(Bytes::from((n + incr).to_string())),
-                        None,
-                    );
-                }
-            } else {
-                store.set(
-                    args[0].clone(),
-                    DataType::String(Bytes::from(incr.to_string())),
-                    None,
-                );
-            }
+            let new_val = match store.get(&args[0]) {
+                Some(entry) => match &entry.data {
+                    DataType::String(val) => {
+                        let n: i64 = std::str::from_utf8(val)
+                            .map_err(|_| "not an integer")?
+                            .parse()
+                            .map_err(|_| "not an integer")?;
+                        drop(entry);
+                        (n + incr).to_string()
+                    }
+                    _ => return Err("wrong type".into()),
+                },
+                None => incr.to_string(),
+            };
+            store.set(args[0].clone(), DataType::String(Bytes::from(new_val)), None);
         }
         "DECRBY" => {
             if args.len() < 2 {
@@ -630,25 +626,21 @@ async fn replay_command(store: &Arc<Store>, cmd: &[Bytes]) -> Result<(), String>
                 .map_err(|_| "bad decrement")?
                 .parse()
                 .map_err(|_| "bad decrement")?;
-            if let Some(entry) = store.get(&args[0]) {
-                if let DataType::String(val) = &entry.data {
-                    let n: i64 = std::str::from_utf8(val)
-                        .map_err(|_| "not an integer")?
-                        .parse()
-                        .map_err(|_| "not an integer")?;
-                    store.set(
-                        args[0].clone(),
-                        DataType::String(Bytes::from((n - decr).to_string())),
-                        None,
-                    );
-                }
-            } else {
-                store.set(
-                    args[0].clone(),
-                    DataType::String(Bytes::from((-decr).to_string())),
-                    None,
-                );
-            }
+            let new_val = match store.get(&args[0]) {
+                Some(entry) => match &entry.data {
+                    DataType::String(val) => {
+                        let n: i64 = std::str::from_utf8(val)
+                            .map_err(|_| "not an integer")?
+                            .parse()
+                            .map_err(|_| "not an integer")?;
+                        drop(entry);
+                        (n - decr).to_string()
+                    }
+                    _ => return Err("wrong type".into()),
+                },
+                None => (-decr).to_string(),
+            };
+            store.set(args[0].clone(), DataType::String(Bytes::from(new_val)), None);
         }
         "DEL" | "UNLINK" => {
             for arg in args {
@@ -714,14 +706,16 @@ async fn replay_command(store: &Arc<Store>, cmd: &[Bytes]) -> Result<(), String>
             if args.len() < 2 {
                 return Err("wrong args".into());
             }
-            let mut list = if let Some(entry) = store.get(&args[0]) {
-                if let DataType::List(existing) = &entry.data {
-                    existing.clone()
-                } else {
-                    return Err("wrong type".into());
-                }
-            } else {
-                std::collections::VecDeque::new()
+            let mut list = match store.get(&args[0]) {
+                Some(entry) => match &entry.data {
+                    DataType::List(existing) => {
+                        let l = existing.clone();
+                        drop(entry);
+                        l
+                    }
+                    _ => return Err("wrong type".into()),
+                },
+                None => std::collections::VecDeque::new(),
             };
             for arg in &args[1..] {
                 list.push_back(arg.clone());
@@ -732,14 +726,16 @@ async fn replay_command(store: &Arc<Store>, cmd: &[Bytes]) -> Result<(), String>
             if args.len() < 2 {
                 return Err("wrong args".into());
             }
-            let mut list = if let Some(entry) = store.get(&args[0]) {
-                if let DataType::List(existing) = &entry.data {
-                    existing.clone()
-                } else {
-                    return Err("wrong type".into());
-                }
-            } else {
-                std::collections::VecDeque::new()
+            let mut list = match store.get(&args[0]) {
+                Some(entry) => match &entry.data {
+                    DataType::List(existing) => {
+                        let l = existing.clone();
+                        drop(entry);
+                        l
+                    }
+                    _ => return Err("wrong type".into()),
+                },
+                None => std::collections::VecDeque::new(),
             };
             for arg in args[1..].iter().rev() {
                 list.push_front(arg.clone());
@@ -750,14 +746,16 @@ async fn replay_command(store: &Arc<Store>, cmd: &[Bytes]) -> Result<(), String>
             if args.len() < 3 {
                 return Err("wrong args".into());
             }
-            let mut map = if let Some(entry) = store.get(&args[0]) {
-                if let DataType::Hash(existing) = &entry.data {
-                    existing.clone()
-                } else {
-                    return Err("wrong type".into());
-                }
-            } else {
-                std::collections::HashMap::new()
+            let mut map = match store.get(&args[0]) {
+                Some(entry) => match &entry.data {
+                    DataType::Hash(existing) => {
+                        let m = existing.clone();
+                        drop(entry);
+                        m
+                    }
+                    _ => return Err("wrong type".into()),
+                },
+                None => std::collections::HashMap::new(),
             };
             for chunk in args[1..].chunks(2) {
                 if chunk.len() == 2 {
@@ -770,14 +768,16 @@ async fn replay_command(store: &Arc<Store>, cmd: &[Bytes]) -> Result<(), String>
             if args.len() < 2 {
                 return Err("wrong args".into());
             }
-            let mut set = if let Some(entry) = store.get(&args[0]) {
-                if let DataType::Set(existing) = &entry.data {
-                    existing.clone()
-                } else {
-                    return Err("wrong type".into());
-                }
-            } else {
-                std::collections::HashSet::new()
+            let mut set = match store.get(&args[0]) {
+                Some(entry) => match &entry.data {
+                    DataType::Set(existing) => {
+                        let s = existing.clone();
+                        drop(entry);
+                        s
+                    }
+                    _ => return Err("wrong type".into()),
+                },
+                None => std::collections::HashSet::new(),
             };
             for arg in &args[1..] {
                 set.insert(arg.clone());
@@ -788,14 +788,16 @@ async fn replay_command(store: &Arc<Store>, cmd: &[Bytes]) -> Result<(), String>
             if args.len() < 3 {
                 return Err("wrong args".into());
             }
-            let mut zset = if let Some(entry) = store.get(&args[0]) {
-                if let DataType::ZSet(existing) = &entry.data {
-                    existing.clone()
-                } else {
-                    return Err("wrong type".into());
-                }
-            } else {
-                valkey_storage::ZSetData::new()
+            let mut zset = match store.get(&args[0]) {
+                Some(entry) => match &entry.data {
+                    DataType::ZSet(existing) => {
+                        let z = existing.clone();
+                        drop(entry);
+                        z
+                    }
+                    _ => return Err("wrong type".into()),
+                },
+                None => valkey_storage::ZSetData::new(),
             };
             for chunk in args[1..].chunks(2) {
                 if chunk.len() == 2 {
@@ -813,7 +815,9 @@ async fn replay_command(store: &Arc<Store>, cmd: &[Bytes]) -> Result<(), String>
                 return Err("wrong args".into());
             }
             if let Some(entry) = store.get(&args[0]) {
-                store.set(args[1].clone(), entry.data.clone(), None);
+                let data = entry.data.clone();
+                drop(entry);
+                store.set(args[1].clone(), data, None);
                 store.del(&args[0]);
             }
         }
@@ -823,7 +827,9 @@ async fn replay_command(store: &Arc<Store>, cmd: &[Bytes]) -> Result<(), String>
             }
             if !store.exists(&args[1]) {
                 if let Some(entry) = store.get(&args[0]) {
-                    store.set(args[1].clone(), entry.data.clone(), None);
+                    let data = entry.data.clone();
+                    drop(entry);
+                    store.set(args[1].clone(), data, None);
                     store.del(&args[0]);
                 }
             }
