@@ -8,8 +8,8 @@ WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY crates/ ./crates/
 
-# Build the server binary in release mode
-RUN cargo build --release -p valkey-server
+# Build the binaries in release mode
+RUN cargo build --release -p valkey-server -p valkey-sentinel
 
 # Stage 2: Runtime image
 FROM debian:bookworm-slim AS runtime
@@ -25,6 +25,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /data
 
 COPY --from=builder /app/target/release/valkey-server /usr/local/bin/valkey-server
+COPY --from=builder /app/target/release/valkey-sentinel /usr/local/bin/valkey-sentinel
 
 EXPOSE ${VALKEY_PORT}
 

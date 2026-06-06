@@ -1,0 +1,107 @@
+services:
+  valkey-primary:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "6379:6379"
+    volumes:
+      - primary-data:/data
+    healthcheck:
+      test: ["CMD", "sh", "-c", "echo PING | nc -w 1 localhost 6379 | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  valkey-replica:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "6380:6379"
+    volumes:
+      - replica-data:/data
+    command: >
+      sh -c "valkey-server"
+    environment:
+      - VALKEY_REPLICAOF=valkey-primary:6379
+    depends_on:
+      valkey-primary:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "sh", "-c", "echo PING | nc -w 1 localhost 6379 | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  sentinel-1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "26379:26379"
+    volumes:
+      - ./sentinel.conf:/etc/sentinel.conf:ro
+    command: >
+      sh -c "valkey-sentinel /etc/sentinel.conf"
+    depends_on:
+      valkey-primary:
+        condition: service_healthy
+      valkey-replica:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "sh", "-c", "echo PING | nc -w 1 localhost 26379 | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  sentinel-2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "26380:26379"
+    volumes:
+      - ./sentinel.conf:/etc/sentinel.conf:ro
+    command: >
+      sh -c "valkey-sentinel /etc/sentinel.conf"
+    depends_on:
+      valkey-primary:
+        condition: service_healthy
+      valkey-replica:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "sh", "-c", "echo PING | nc -w 1 localhost 26379 | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  sentinel-3:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "26381:26379"
+    volumes:
+      - ./sentinel.conf:/etc/sentinel.conf:ro
+    command: >
+      sh -c "valkey-sentinel /etc/sentinel.conf"
+    depends_on:
+      valkey-primary:
+        condition: service_healthy
+      valkey-replica:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "sh", "-c", "echo PING | nc -w 1 localhost 26379 | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  primary-data:
+  replica-data:
