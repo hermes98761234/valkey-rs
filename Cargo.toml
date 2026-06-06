@@ -8,6 +8,7 @@ members = [
   "crates/cluster",
   "crates/pubsub",
   "crates/scripting",
+  "crates/modules",
   "crates/server",
   "crates/sentinel",
 ]

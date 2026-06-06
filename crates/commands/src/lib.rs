@@ -157,6 +157,7 @@ pub async fn dispatch_ctx(cmd: Vec<Bytes>, store: Db, ctx: &CommandCtx) -> RespV
                 .await
                 .unwrap_or_else(|| RespValue::Error("ERR internal error".into()))
         }
+        "MODULE" => valkey_modules::handle_module_cmd(args, &store),
         "ACL" => acl::handle(args, ctx.client.clone()).await,
         "AUTH" => acl::cmd_auth(args, ctx.client.clone()).await,
         "CLUSTER" => cluster::handle(args).await,
@@ -198,7 +199,13 @@ pub async fn dispatch_ctx(cmd: Vec<Bytes>, store: Db, ctx: &CommandCtx) -> RespV
                 "ZUNION" => zset::zunion(&store, args),
                 "ZMPOP" => zset::zmpop(&store, args),
                 "PSYNC" => Ok(replication::cmd_psync(&cmd[1..], &store).await),
-                _ => return RespValue::Error(format!("ERR unknown command `{}`", name).into()),
+                _ => {
+                    // Check if a loaded module handles this command
+                    if let Some(resp) = valkey_modules::module_call(&store, &cmd) {
+                        return resp;
+                    }
+                    return RespValue::Error(format!("ERR unknown command `{}`", name).into());
+                }
             };
             match r {
                 Ok(v) => v,

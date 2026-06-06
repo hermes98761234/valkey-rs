@@ -1,0 +1,11 @@
+[package]
+name = "valkey-modules"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bytes = { workspace = true }
+tracing = { workspace = true }
+libloading = "0.8"
+valkey-storage = { path = "../storage" }
+valkey-proto = { path = "../proto" }
