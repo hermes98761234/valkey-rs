@@ -1,9 +1,9 @@
 use bytes::Bytes;
 use dashmap::DashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::sync::{broadcast, Mutex};
+use tokio::sync::{broadcast, Mutex as TokioMutex};
 use tracing::info;
 
 use valkey_persistence::rdb;
@@ -128,13 +128,20 @@ impl ReplicaConn {
 /// and handles PSYNC (full and partial resynchronization) requests.
 pub struct ReplicationManager {
     replicas: DashMap<u64, Arc<ReplicaConn>>,
-    backlog: Mutex<CircularBuffer>,
+    backlog: TokioMutex<CircularBuffer>,
     backlog_offset: AtomicU64,
     repl_id: String,
     next_replica_id: AtomicU64,
     store: Arc<Store>,
     /// Channel for streaming write commands to all replicas
     cmd_tx: broadcast::Sender<Bytes>,
+    /// Per-replica ack offsets: maps replica_id -> last acknowledged offset
+    ack_offsets: DashMap<u64, AtomicU64>,
+    /// Anonymous ack offsets for when we can't identify which replica sent ACK
+    anonymous_ack_offsets: std::sync::Mutex<Vec<u64>>,
+    /// Notifier for WAIT command: broadcast when replicas ack
+    ack_notify: tokio::sync::watch::Sender<()>,
+    ack_notify_rx: tokio::sync::watch::Receiver<()>,
 }
 
 impl ReplicationManager {
@@ -144,15 +151,20 @@ impl ReplicationManager {
     pub fn new(store: Arc<Store>) -> Arc<Self> {
         let (cmd_tx, _cmd_rx) = broadcast::channel(4096);
         let repl_id = generate_repl_id();
+        let (ack_notify, ack_notify_rx) = tokio::sync::watch::channel(());
 
         let mgr = Arc::new(Self {
             replicas: DashMap::new(),
-            backlog: Mutex::new(CircularBuffer::new(Self::DEFAULT_BACKLOG_SIZE)),
+            backlog: TokioMutex::new(CircularBuffer::new(Self::DEFAULT_BACKLOG_SIZE)),
             backlog_offset: AtomicU64::new(0),
             repl_id,
             next_replica_id: AtomicU64::new(1),
             store,
             cmd_tx,
+            ack_offsets: DashMap::new(),
+            anonymous_ack_offsets: Mutex::new(Vec::new()),
+            ack_notify,
+            ack_notify_rx,
         });
 
         // Spawn replica expiry reaper
@@ -188,6 +200,71 @@ impl ReplicationManager {
             .iter()
             .filter(|e| e.value().active.load(Ordering::Relaxed))
             .count()
+    }
+
+    /// Update the ack offset for a replica. Called when the leader receives
+    /// REPLCONF ACK <offset> from a replica.
+    pub fn replica_ack(&self, replica_id: u64, offset: u64) {
+        self.ack_offsets
+            .entry(replica_id)
+            .or_insert_with(|| AtomicU64::new(0))
+            .store(offset, Ordering::Relaxed);
+        // Notify any WAIT commands that a replica acked
+        let _ = self.ack_notify.send(());
+    }
+
+    /// Record an ack offset from an anonymous replica connection.
+    /// Used when the leader receives REPLCONF ACK but can't identify which replica sent it.
+    /// Stores the offset in a rotating buffer capped at the current replica count.
+    pub fn record_anonymous_ack(&self, offset: u64) {
+        let mut offsets = self.anonymous_ack_offsets.lock().unwrap();
+        let count = self.replica_count();
+        if count == 0 {
+            return;
+        }
+        if offsets.len() < count {
+            offsets.push(offset);
+        } else {
+            // Replace the entry with the smallest offset (round-robin replacement)
+            if let Some(min_idx) = offsets
+                .iter()
+                .enumerate()
+                .min_by_key(|(_, v)| *v)
+                .map(|(i, _)| i)
+            {
+                offsets[min_idx] = offset;
+            }
+        }
+        let _ = self.ack_notify.send(());
+    }
+
+    /// Count how many connected replicas have acked at least `min_offset`.
+    pub fn count_acked_replicas(&self, min_offset: u64) -> usize {
+        // First try per-replica tracking
+        let counted = self
+            .replicas
+            .iter()
+            .filter(|e| {
+                if !e.value().active.load(Ordering::Relaxed) {
+                    return false;
+                }
+                self.ack_offsets
+                    .get(e.key())
+                    .map(|a| a.value().load(Ordering::Relaxed) >= min_offset)
+                    .unwrap_or(false)
+            })
+            .count();
+        if counted > 0 {
+            return counted;
+        }
+        // Fall back to anonymous ack tracking
+        let offsets = self.anonymous_ack_offsets.lock().unwrap();
+        offsets.iter().filter(|o| **o >= min_offset).count()
+    }
+
+    /// Get a receiver for the ack notification channel.
+    pub fn ack_notify_channel(&self) -> tokio::sync::watch::Receiver<()> {
+        self.ack_notify_rx.clone()
     }
 
     /// Append a write command to the backlog and broadcast to replicas.
@@ -310,6 +387,14 @@ impl ReplicationManager {
     fn reap_disconnected_replicas(&self) {
         self.replicas
             .retain(|_, replica| replica.active.load(Ordering::Relaxed));
+        // Clean up ack offsets for removed replicas
+        let active_ids: Vec<u64> = self
+            .replicas
+            .iter()
+            .map(|e| *e.key())
+            .collect();
+        self.ack_offsets
+            .retain(|id, _| active_ids.contains(id));
     }
 
     /// Mark a replica as disconnected.
@@ -423,5 +508,81 @@ mod tests {
             &encoded[..],
             b"*3\r\n$3\r\nSET\r\n$5\r\nmykey\r\n$7\r\nmyvalue\r\n"
         );
+    }
+
+    #[tokio::test]
+    async fn test_replica_ack_tracking() {
+        let store = valkey_storage::Store::new();
+        let mgr = ReplicationManager::new(store);
+
+        // Simulate a replica connecting
+        let replica_id = mgr.next_replica_id.fetch_add(1, Ordering::SeqCst);
+        let replica = Arc::new(ReplicaConn::new(replica_id));
+        mgr.replicas.insert(replica_id, replica);
+
+        // Initially no replicas have acked offset 100
+        assert_eq!(mgr.count_acked_replicas(100), 0);
+
+        // Replica acks offset 50
+        mgr.replica_ack(replica_id, 50);
+        assert_eq!(mgr.count_acked_replicas(100), 0);
+        assert_eq!(mgr.count_acked_replicas(50), 1);
+        assert_eq!(mgr.count_acked_replicas(25), 1);
+
+        // Replica acks offset 200
+        mgr.replica_ack(replica_id, 200);
+        assert_eq!(mgr.count_acked_replicas(100), 1);
+        assert_eq!(mgr.count_acked_replicas(200), 1);
+        assert_eq!(mgr.count_acked_replicas(201), 0);
+    }
+
+    #[tokio::test]
+    async fn test_anonymous_ack_tracking() {
+        let store = valkey_storage::Store::new();
+        let mgr = ReplicationManager::new(store);
+
+        // No replicas connected, anonymous ack should be no-op
+        mgr.record_anonymous_ack(100);
+        assert_eq!(mgr.count_acked_replicas(0), 0);
+
+        // Add a replica
+        let replica_id = mgr.next_replica_id.fetch_add(1, Ordering::SeqCst);
+        let replica = Arc::new(ReplicaConn::new(replica_id));
+        mgr.replicas.insert(replica_id, replica);
+
+        // Anonymous ack should now be recorded
+        mgr.record_anonymous_ack(100);
+        assert_eq!(mgr.count_acked_replicas(100), 1);
+        assert_eq!(mgr.count_acked_replicas(200), 0);
+
+        // Another anonymous ack with higher offset
+        mgr.record_anonymous_ack(200);
+        assert_eq!(mgr.count_acked_replicas(100), 1);
+    }
+
+    #[tokio::test]
+    async fn test_count_acked_replicas_multiple() {
+        let store = valkey_storage::Store::new();
+        let mgr = ReplicationManager::new(store);
+
+        // Add 3 replicas
+        for _ in 0..3 {
+            let id = mgr.next_replica_id.fetch_add(1, Ordering::SeqCst);
+            let replica = Arc::new(ReplicaConn::new(id));
+            mgr.replicas.insert(id, replica);
+        }
+
+        // Replica 1 acks offset 100
+        mgr.replica_ack(1, 100);
+        assert_eq!(mgr.count_acked_replicas(100), 1);
+
+        // Replica 2 acks offset 100
+        mgr.replica_ack(2, 100);
+        assert_eq!(mgr.count_acked_replicas(100), 2);
+
+        // Replica 3 acks offset 50 (behind)
+        mgr.replica_ack(3, 50);
+        assert_eq!(mgr.count_acked_replicas(100), 2);
+        assert_eq!(mgr.count_acked_replicas(50), 3);
     }
 }
