@@ -92,12 +92,191 @@ pub struct ClientCtx {
     pub queue: Vec<Vec<Bytes>>,
     pub watched: Vec<Bytes>,
     pub dirty: bool,
+    // Client-side caching (CLIENT TRACKING)
+    pub tracking: TrackingState,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct ClientFlags {
     pub no_evict: bool,
     pub no_touch: bool,
+}
+
+// ---------------------------------------------------------------------------
+// Client-side caching (CLIENT TRACKING)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum TrackingMode {
+    Default,
+    Bcast,
+}
+
+#[derive(Debug, Clone)]
+pub struct TrackingState {
+    pub enabled: bool,
+    pub mode: TrackingMode,
+    pub redirect: Option<i64>,
+    pub prefixes: Vec<String>,
+    pub optin: bool,
+    pub optout: bool,
+    pub noloop: bool,
+    /// Whether the client has opted in via CLIENT CACHING YES (only relevant when optin=true)
+    pub caching: bool,
+}
+
+impl Default for TrackingState {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            mode: TrackingMode::Default,
+            redirect: None,
+            prefixes: Vec::new(),
+            optin: false,
+            optout: false,
+            noloop: false,
+            caching: false,
+        }
+    }
+}
+
+impl TrackingState {
+    /// Build the CLIENT TRACKINGINFO response array.
+    pub fn trackinginfo(&self) -> Vec<RespValue> {
+        let mut flags = Vec::new();
+        if self.enabled {
+            flags.push(RespValue::bulk(Bytes::from("on")));
+        } else {
+            flags.push(RespValue::bulk(Bytes::from("off")));
+        }
+        if let Some(redir) = self.redirect {
+            flags.push(RespValue::bulk(Bytes::from(format!("redirect={}", redir))));
+        }
+        if self.mode == TrackingMode::Bcast {
+            flags.push(RespValue::bulk(Bytes::from("bcast")));
+        }
+        for prefix in &self.prefixes {
+            if prefix.is_empty() {
+                flags.push(RespValue::bulk(Bytes::from("prefix=")));
+            } else {
+                flags.push(RespValue::bulk(Bytes::from(format!("prefix={}", prefix))));
+            }
+        }
+        if self.optin {
+            flags.push(RespValue::bulk(Bytes::from("optin")));
+        }
+        if self.optout {
+            flags.push(RespValue::bulk(Bytes::from("optout")));
+        }
+        if self.noloop {
+            flags.push(RespValue::bulk(Bytes::from("noloop")));
+        }
+        flags
+    }
+
+    /// Update this tracking state from CLIENT TRACKING ON arguments.
+    pub fn enable_from_args(
+        &mut self,
+        args: &[Bytes],
+    ) -> Result<(), String> {
+        self.enabled = true;
+        // Reset mode to defaults first
+        self.mode = TrackingMode::Default;
+        self.redirect = None;
+        self.prefixes.clear();
+        self.optin = false;
+        self.optout = false;
+        self.noloop = false;
+
+        let mut i = 0;
+        while i < args.len() {
+            let arg = match std::str::from_utf8(&args[i]) {
+                Ok(s) => s.to_ascii_uppercase(),
+                Err(_) => return Err("ERR invalid argument".into()),
+            };
+            match arg.as_str() {
+                "REDIRECT" => {
+                    if i + 1 >= args.len() {
+                        return Err("ERR missing REDIRECT client-id".into());
+                    }
+                    i += 1;
+                    let id: i64 = match std::str::from_utf8(&args[i]) {
+                        Ok(s) => s.parse().map_err(|_| "ERR invalid client-id")?,
+                        Err(_) => return Err("ERR invalid client-id".into()),
+                    };
+                    self.redirect = Some(id);
+                }
+                "PREFIX" => {
+                    if i + 1 >= args.len() {
+                        return Err("ERR missing PREFIX value".into());
+                    }
+                    i += 1;
+                    let prefix = match std::str::from_utf8(&args[i]) {
+                        Ok(s) => s.to_string(),
+                        Err(_) => return Err("ERR invalid prefix".into()),
+                    };
+                    // If any prefix is given, switch to empty_prefix mode for that prefix
+                    if self.mode != TrackingMode::Bcast {
+                        // first prefix in default mode — treat as the key prefix to track
+                    }
+                    self.prefixes.push(prefix);
+                }
+                "BCAST" => {
+                    self.mode = TrackingMode::Bcast;
+                }
+                "OPTIN" => {
+                    self.optin = true;
+                }
+                "OPTOUT" => {
+                    self.optout = true;
+                }
+                "NOLOOP" => {
+                    self.noloop = true;
+                }
+                _ => {
+                    return Err(format!("ERR invalid option '{}'", arg));
+                }
+            }
+            i += 1;
+        }
+        Ok(())
+    }
+
+    /// Disable tracking.
+    pub fn disable(&mut self) {
+        self.enabled = false;
+        self.mode = TrackingMode::Default;
+        self.redirect = None;
+        self.prefixes.clear();
+        self.optin = false;
+        self.optout = false;
+        self.noloop = false;
+        self.caching = false;
+    }
+
+    /// Whether this client should receive invalidations.
+    pub fn should_receive_invalidations(&self) -> bool {
+        if !self.enabled {
+            return false;
+        }
+        if self.optin && !self.caching {
+            return false;
+        }
+        true
+    }
+
+    /// In RESP2 mode, publishing to __redis__:invalidate is used.
+    /// In RESP3 mode, push messages are sent.
+    /// `resp3` tells us if the client is connected via RESP3.
+    /// `target_client_id` is the client-id to send to (redirect client-id if set, otherwise self).
+    /// Returns (target_client_id, is_resp3) to help the caller send the message.
+    /// If redirect is set, returns the redirect target; the caller needs to find that client.
+    pub fn invalidation_target(&self) -> (Option<i64>, bool) {
+        if self.redirect.is_some() {
+            return (self.redirect, false); // redirect always uses RESP2/redis channel
+        }
+        (None, true) // send as RESP3 push
+    }
 }
 
 impl ClientCtx {
@@ -112,6 +291,7 @@ impl ClientCtx {
             queue: Vec::new(),
             watched: Vec::new(),
             dirty: false,
+            tracking: TrackingState::default(),
         }
     }
 }
@@ -1679,6 +1859,13 @@ const COMMANDS: &[CommandDesc] = &[
         last_key: 0,
         key_step: 0,
     },
+    CommandDesc {
+        name: "CLIENT",
+        arity: -1,
+        first_key: 0,
+        last_key: 0,
+        key_step: 0,
+    },
 ];
 
 fn command_descriptor(c: &CommandDesc) -> RespValue {
@@ -2171,10 +2358,10 @@ async fn cmd_client(args: &[Bytes], client: Arc<RwLock<ClientCtx>>) -> RespValue
         "NO-EVICT" => cmd_client_no_evict(&args[1..], client).await,
         "NO-TOUCH" => cmd_client_no_touch(&args[1..], client).await,
         "REPLY" => cmd_client_reply(&args[1..]).await,
-        "TRACKING" => cmd_client_tracking(&args[1..]).await,
-        "TRACKINGINFO" => cmd_client_trackinginfo(&args[1..]).await,
-        "CACHING" => cmd_client_caching(&args[1..]).await,
-        "GETREDIR" => cmd_client_getredir(&args[1..]).await,
+        "TRACKING" => cmd_client_tracking(&args[1..], client).await,
+        "TRACKINGINFO" => cmd_client_trackinginfo(&args[1..], client).await,
+        "CACHING" => cmd_client_caching(&args[1..], client).await,
+        "GETREDIR" => cmd_client_getredir(&args[1..], client).await,
         _ => RespValue::Error(format!("ERR unknown subcommand `{}`", sub)),
     }
 }
@@ -2281,20 +2468,80 @@ async fn cmd_client_reply(_args: &[Bytes]) -> RespValue {
     RespValue::ok()
 }
 
-async fn cmd_client_tracking(_args: &[Bytes]) -> RespValue {
-    RespValue::ok()
+async fn cmd_client_tracking(args: &[Bytes], client: Arc<RwLock<ClientCtx>>) -> RespValue {
+    if args.is_empty() {
+        return RespValue::Error(
+            "ERR wrong number of arguments for 'client|tracking' command".into(),
+        );
+    }
+    let sub = match std::str::from_utf8(&args[0]) {
+        Ok(s) => s.to_ascii_uppercase(),
+        Err(_) => return RespValue::Error("ERR invalid subcommand".into()),
+    };
+    match sub.as_str() {
+        "ON" => {
+            let mut ctx = client.write().unwrap();
+            match ctx.tracking.enable_from_args(&args[1..]) {
+                Ok(()) => RespValue::ok(),
+                Err(e) => RespValue::Error(e.into()),
+            }
+        }
+        "OFF" => {
+            let mut ctx = client.write().unwrap();
+            ctx.tracking.disable();
+            RespValue::ok()
+        }
+        "STATUS" => {
+            let ctx = client.read().unwrap();
+            if ctx.tracking.enabled {
+                RespValue::SimpleString("on".into())
+            } else {
+                RespValue::SimpleString("off".into())
+            }
+        }
+        _ => RespValue::Error(format!("ERR unknown subcommand `{}`", sub)),
+    }
 }
 
-async fn cmd_client_trackinginfo(_args: &[Bytes]) -> RespValue {
-    RespValue::array(vec![])
+async fn cmd_client_trackinginfo(_args: &[Bytes], client: Arc<RwLock<ClientCtx>>) -> RespValue {
+    let ctx = client.read().unwrap();
+    let flags = ctx.tracking.trackinginfo();
+    RespValue::array(flags)
 }
 
-async fn cmd_client_caching(_args: &[Bytes]) -> RespValue {
-    RespValue::ok()
+async fn cmd_client_caching(args: &[Bytes], client: Arc<RwLock<ClientCtx>>) -> RespValue {
+    if args.is_empty() {
+        return RespValue::Error(
+            "ERR wrong number of arguments for 'client|caching' command".into(),
+        );
+    }
+    let val = match std::str::from_utf8(&args[0]) {
+        Ok(s) => s.to_ascii_uppercase(),
+        Err(_) => return RespValue::Error("ERR invalid value".into()),
+    };
+    match val.as_str() {
+        "YES" => {
+            let mut ctx = client.write().unwrap();
+            ctx.tracking.caching = true;
+            RespValue::ok()
+        }
+        "NO" => {
+            let mut ctx = client.write().unwrap();
+            ctx.tracking.caching = false;
+            RespValue::ok()
+        }
+        _ => RespValue::Error(
+            "ERR CLIENT CACHING option must be either YES or NO".into(),
+        ),
+    }
 }
 
-async fn cmd_client_getredir(_args: &[Bytes]) -> RespValue {
-    RespValue::Integer(-1)
+async fn cmd_client_getredir(_args: &[Bytes], client: Arc<RwLock<ClientCtx>>) -> RespValue {
+    let ctx = client.read().unwrap();
+    match ctx.tracking.redirect {
+        Some(id) => RespValue::Integer(id),
+        None => RespValue::Integer(-1),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -3040,5 +3287,428 @@ mod tests {
         let mut cfg = ServerConfig::default();
         assert!(cfg.set("maxmemory-policy", "allkeys-lru").is_ok());
         assert!(cfg.set("maxmemory-policy", "invalid").is_err());
+    }
+
+    // ---------------------------------------------------------------------------
+    // CLIENT TRACKING tests
+    // ---------------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_tracking_state_default() {
+        let ts = TrackingState::default();
+        assert!(!ts.enabled);
+        assert_eq!(ts.mode, TrackingMode::Default);
+        assert!(ts.redirect.is_none());
+        assert!(ts.prefixes.is_empty());
+        assert!(!ts.optin);
+        assert!(!ts.optout);
+        assert!(!ts.noloop);
+        assert!(!ts.caching);
+    }
+
+    #[tokio::test]
+    async fn test_tracking_enable_on_basic() {
+        let mut ts = TrackingState::default();
+        let args: Vec<Bytes> = vec![];
+        assert!(ts.enable_from_args(&args).is_ok());
+        assert!(ts.enabled);
+        assert_eq!(ts.mode, TrackingMode::Default);
+    }
+
+    #[tokio::test]
+    async fn test_tracking_enable_on_bcast() {
+        let mut ts = TrackingState::default();
+        let args = vec![Bytes::from("BCAST")];
+        assert!(ts.enable_from_args(&args).is_ok());
+        assert!(ts.enabled);
+        assert_eq!(ts.mode, TrackingMode::Bcast);
+    }
+
+    #[tokio::test]
+    async fn test_tracking_enable_on_redirect() {
+        let mut ts = TrackingState::default();
+        let args = vec![Bytes::from("REDIRECT"), Bytes::from("42")];
+        assert!(ts.enable_from_args(&args).is_ok());
+        assert!(ts.enabled);
+        assert_eq!(ts.redirect, Some(42));
+    }
+
+    #[tokio::test]
+    async fn test_tracking_enable_on_prefix() {
+        let mut ts = TrackingState::default();
+        let args = vec![Bytes::from("PREFIX"), Bytes::from("user:")];
+        assert!(ts.enable_from_args(&args).is_ok());
+        assert!(ts.enabled);
+        assert_eq!(ts.prefixes, vec!["user:".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn test_tracking_enable_on_multiple_prefixes() {
+        let mut ts = TrackingState::default();
+        let args = vec![
+            Bytes::from("PREFIX"),
+            Bytes::from("user:"),
+            Bytes::from("PREFIX"),
+            Bytes::from("session:"),
+        ];
+        assert!(ts.enable_from_args(&args).is_ok());
+        assert_eq!(ts.prefixes.len(), 2);
+        assert_eq!(ts.prefixes[0], "user:");
+        assert_eq!(ts.prefixes[1], "session:");
+    }
+
+    #[tokio::test]
+    async fn test_tracking_enable_on_optin_optout_noloop() {
+        let mut ts = TrackingState::default();
+        let args = vec![
+            Bytes::from("OPTIN"),
+            Bytes::from("OPTOUT"),
+            Bytes::from("NOLOOP"),
+        ];
+        assert!(ts.enable_from_args(&args).is_ok());
+        assert!(ts.optin);
+        assert!(ts.optout);
+        assert!(ts.noloop);
+    }
+
+    #[tokio::test]
+    async fn test_tracking_enable_on_combined() {
+        let mut ts = TrackingState::default();
+        let args = vec![
+            Bytes::from("REDIRECT"),
+            Bytes::from("99"),
+            Bytes::from("BCAST"),
+            Bytes::from("PREFIX"),
+            Bytes::from("cache:"),
+            Bytes::from("NOLOOP"),
+        ];
+        assert!(ts.enable_from_args(&args).is_ok());
+        assert!(ts.enabled);
+        assert_eq!(ts.mode, TrackingMode::Bcast);
+        assert_eq!(ts.redirect, Some(99));
+        assert_eq!(ts.prefixes, vec!["cache:".to_string()]);
+        assert!(ts.noloop);
+    }
+
+    #[tokio::test]
+    async fn test_tracking_enable_on_invalid_option() {
+        let mut ts = TrackingState::default();
+        let args = vec![Bytes::from("INVALID")];
+        assert!(ts.enable_from_args(&args).is_err());
+    }
+
+    #[tokio::test]
+    async fn test_tracking_enable_on_redirect_missing_id() {
+        let mut ts = TrackingState::default();
+        let args = vec![Bytes::from("REDIRECT")];
+        assert!(ts.enable_from_args(&args).is_err());
+    }
+
+    #[tokio::test]
+    async fn test_tracking_disable() {
+        let mut ts = TrackingState::default();
+        let args = vec![Bytes::from("BCAST")];
+        ts.enable_from_args(&args).unwrap();
+        assert!(ts.enabled);
+        ts.disable();
+        assert!(!ts.enabled);
+        assert_eq!(ts.mode, TrackingMode::Default);
+        assert!(ts.redirect.is_none());
+        assert!(ts.prefixes.is_empty());
+        assert!(!ts.optin);
+        assert!(!ts.caching);
+    }
+
+    #[tokio::test]
+    async fn test_tracking_should_receive_invalidations() {
+        let mut ts = TrackingState::default();
+        // Not enabled -> should not receive
+        assert!(!ts.should_receive_invalidations());
+
+        // Enabled, no optin -> should receive
+        ts.enabled = true;
+        assert!(ts.should_receive_invalidations());
+
+        // Enabled with optin but not caching -> should not receive
+        ts.optin = true;
+        assert!(!ts.should_receive_invalidations());
+
+        // Enabled with optin and caching -> should receive
+        ts.caching = true;
+        assert!(ts.should_receive_invalidations());
+
+        // Optout mode -> should receive (optout means skip invalidations unless CLIENT CACHING NO)
+        ts.optin = false;
+        ts.optout = true;
+        assert!(ts.should_receive_invalidations());
+    }
+
+    #[tokio::test]
+    async fn test_trackinginfo_response() {
+        let mut ts = TrackingState::default();
+        let info = ts.trackinginfo();
+        // Should have "on" or "off" as first element
+        assert_eq!(info.len(), 1);
+        assert_eq!(info[0], RespValue::bulk(Bytes::from("off")));
+
+        ts.enabled = true;
+        let info = ts.trackinginfo();
+        assert_eq!(info[0], RespValue::bulk(Bytes::from("on")));
+
+        ts.mode = TrackingMode::Bcast;
+        let info = ts.trackinginfo();
+        assert!(info.contains(&RespValue::bulk(Bytes::from("bcast"))));
+
+        ts.redirect = Some(42);
+        let info = ts.trackinginfo();
+        assert!(info.contains(&RespValue::bulk(Bytes::from("redirect=42"))));
+
+        ts.prefixes.push("user:".to_string());
+        let info = ts.trackinginfo();
+        assert!(info.contains(&RespValue::bulk(Bytes::from("prefix=user:"))));
+
+        ts.optin = true;
+        let info = ts.trackinginfo();
+        assert!(info.contains(&RespValue::bulk(Bytes::from("optin"))));
+
+        ts.noloop = true;
+        let info = ts.trackinginfo();
+        assert!(info.contains(&RespValue::bulk(Bytes::from("noloop"))));
+    }
+
+    #[tokio::test]
+    async fn test_client_tracking_on_off_status() {
+        use std::sync::Arc;
+        use std::sync::RwLock;
+
+        let client = Arc::new(RwLock::new(ClientCtx::new()));
+
+        // Initially tracking is off
+        let resp = cmd_client_tracking(
+            &[Bytes::from("STATUS")],
+            Arc::clone(&client),
+        )
+        .await;
+        assert_eq!(resp, RespValue::SimpleString("off".into()));
+
+        // Enable tracking
+        let resp = cmd_client_tracking(
+            &[Bytes::from("ON")],
+            Arc::clone(&client),
+        )
+        .await;
+        assert_eq!(resp, RespValue::ok());
+
+        // Now status should be on
+        let resp = cmd_client_tracking(
+            &[Bytes::from("STATUS")],
+            Arc::clone(&client),
+        )
+        .await;
+        assert_eq!(resp, RespValue::SimpleString("on".into()));
+
+        // Disable tracking
+        let resp = cmd_client_tracking(
+            &[Bytes::from("OFF")],
+            Arc::clone(&client),
+        )
+        .await;
+        assert_eq!(resp, RespValue::ok());
+
+        // Status should be off again
+        let resp = cmd_client_tracking(
+            &[Bytes::from("STATUS")],
+            Arc::clone(&client),
+        )
+        .await;
+        assert_eq!(resp, RespValue::SimpleString("off".into()));
+    }
+
+    #[tokio::test]
+    async fn test_client_tracking_on_with_options() {
+        use std::sync::Arc;
+        use std::sync::RwLock;
+
+        let client = Arc::new(RwLock::new(ClientCtx::new()));
+
+        // Enable with BCAST
+        let resp = cmd_client_tracking(
+            &[Bytes::from("ON"), Bytes::from("BCAST")],
+            Arc::clone(&client),
+        )
+        .await;
+        assert_eq!(resp, RespValue::ok());
+
+        let ctx = client.read().unwrap();
+        assert!(ctx.tracking.enabled);
+        assert_eq!(ctx.tracking.mode, TrackingMode::Bcast);
+    }
+
+    #[tokio::test]
+    async fn test_client_tracking_on_with_redirect() {
+        use std::sync::Arc;
+        use std::sync::RwLock;
+
+        let client = Arc::new(RwLock::new(ClientCtx::new()));
+
+        let resp = cmd_client_tracking(
+            &[Bytes::from("ON"), Bytes::from("REDIRECT"), Bytes::from("42")],
+            Arc::clone(&client),
+        )
+        .await;
+        assert_eq!(resp, RespValue::ok());
+
+        let ctx = client.read().unwrap();
+        assert_eq!(ctx.tracking.redirect, Some(42));
+    }
+
+    #[tokio::test]
+    async fn test_client_tracking_invalid_subcommand() {
+        use std::sync::Arc;
+        use std::sync::RwLock;
+
+        let client = Arc::new(RwLock::new(ClientCtx::new()));
+
+        let resp = cmd_client_tracking(
+            &[Bytes::from("INVALID")],
+            Arc::clone(&client),
+        )
+        .await;
+        assert!(matches!(resp, RespValue::Error(_)));
+    }
+
+    #[tokio::test]
+    async fn test_client_trackinginfo() {
+        use std::sync::Arc;
+        use std::sync::RwLock;
+
+        let client = Arc::new(RwLock::new(ClientCtx::new()));
+
+        // Initially tracking is off
+        let resp = cmd_client_trackinginfo(&[], Arc::clone(&client)).await;
+        match &resp {
+            RespValue::Array(Some(arr)) => {
+                assert_eq!(arr[0], RespValue::bulk(Bytes::from("off")));
+            }
+            _ => panic!("expected array response"),
+        }
+
+        // Enable tracking
+        cmd_client_tracking(
+            &[Bytes::from("ON"), Bytes::from("BCAST")],
+            Arc::clone(&client),
+        )
+        .await;
+
+        let resp = cmd_client_trackinginfo(&[], Arc::clone(&client)).await;
+        match &resp {
+            RespValue::Array(Some(arr)) => {
+                assert!(arr.contains(&RespValue::bulk(Bytes::from("on"))));
+                assert!(arr.contains(&RespValue::bulk(Bytes::from("bcast"))));
+            }
+            _ => panic!("expected array response"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_client_caching_yes_no() {
+        use std::sync::Arc;
+        use std::sync::RwLock;
+
+        let client = Arc::new(RwLock::new(ClientCtx::new()));
+
+        // Enable tracking with OPTIN
+        cmd_client_tracking(
+            &[Bytes::from("ON"), Bytes::from("OPTIN")],
+            Arc::clone(&client),
+        )
+        .await;
+
+        // Caching should be off by default
+        {
+            let ctx = client.read().unwrap();
+            assert!(!ctx.tracking.caching);
+        }
+
+        // Set caching YES
+        let resp = cmd_client_caching(
+            &[Bytes::from("YES")],
+            Arc::clone(&client),
+        )
+        .await;
+        assert_eq!(resp, RespValue::ok());
+
+        {
+            let ctx = client.read().unwrap();
+            assert!(ctx.tracking.caching);
+        }
+
+        // Set caching NO
+        let resp = cmd_client_caching(
+            &[Bytes::from("NO")],
+            Arc::clone(&client),
+        )
+        .await;
+        assert_eq!(resp, RespValue::ok());
+
+        {
+            let ctx = client.read().unwrap();
+            assert!(!ctx.tracking.caching);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_client_caching_invalid() {
+        use std::sync::Arc;
+        use std::sync::RwLock;
+
+        let client = Arc::new(RwLock::new(ClientCtx::new()));
+
+        let resp = cmd_client_caching(
+            &[Bytes::from("MAYBE")],
+            Arc::clone(&client),
+        )
+        .await;
+        assert!(matches!(resp, RespValue::Error(_)));
+    }
+
+    #[tokio::test]
+    async fn test_client_caching_missing_arg() {
+        use std::sync::Arc;
+        use std::sync::RwLock;
+
+        let client = Arc::new(RwLock::new(ClientCtx::new()));
+
+        let resp = cmd_client_caching(&[], Arc::clone(&client)).await;
+        assert!(matches!(resp, RespValue::Error(_)));
+    }
+
+    #[tokio::test]
+    async fn test_client_getredir() {
+        use std::sync::Arc;
+        use std::sync::RwLock;
+
+        let client = Arc::new(RwLock::new(ClientCtx::new()));
+
+        // No redirect set
+        let resp = cmd_client_getredir(&[], Arc::clone(&client)).await;
+        assert_eq!(resp, RespValue::Integer(-1));
+
+        // Set redirect
+        cmd_client_tracking(
+            &[Bytes::from("ON"), Bytes::from("REDIRECT"), Bytes::from("42")],
+            Arc::clone(&client),
+        )
+        .await;
+
+        let resp = cmd_client_getredir(&[], Arc::clone(&client)).await;
+        assert_eq!(resp, RespValue::Integer(42));
+    }
+
+    #[tokio::test]
+    async fn test_client_ctx_has_tracking_field() {
+        let ctx = ClientCtx::new();
+        assert!(!ctx.tracking.enabled);
+        assert_eq!(ctx.tracking.mode, TrackingMode::Default);
     }
 }
