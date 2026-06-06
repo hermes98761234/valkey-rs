@@ -3,7 +3,9 @@ use std::sync::Arc;
 
 use bytes::Bytes;
 use valkey_proto::RespValue;
-use valkey_storage::{DataType, Store};
+use valkey_storage::{DataType, IntSet, Store};
+
+const INTSET_THRESHOLD: usize = 512;
 
 // ---------------------------------------------------------------------------
 // SADD key member [member ...]
@@ -15,24 +17,57 @@ pub fn sadd(store: &Arc<Store>, args: &[Bytes]) -> RespValue {
     let key = &args[0];
     let members = &args[1..];
 
-    let mut entry = store
-        .get(key)
-        .map(|e| e.data.clone())
-        .unwrap_or_else(|| DataType::Set(HashSet::new()));
+    let existing = store.get(key).map(|e| e.data.clone());
 
-    let set = match &mut entry {
-        DataType::Set(s) => s,
+    // Check if all new members are integers (for IntSet encoding)
+    let all_integers = members.iter().all(|m| {
+        std::str::from_utf8(m).ok().and_then(|s| s.parse::<i64>().ok()).is_some()
+    });
+
+    let mut entry = match existing {
+        None => {
+            if all_integers {
+                DataType::IntSet(IntSet::new())
+            } else {
+                DataType::Set(HashSet::new())
+            }
+        }
+        Some(e) => e,
+    };
+
+    // Upgrade IntSet to Set if any non-integer member is being added
+    if !all_integers && matches!(entry, DataType::IntSet(_)) {
+        entry.upgrade_to_set();
+    }
+
+    let mut added: i64 = 0;
+    match &mut entry {
+        DataType::Set(s) => {
+            for m in members {
+                if s.insert(m.clone()) {
+                    added += 1;
+                }
+            }
+        }
+        DataType::IntSet(is) => {
+            for m in members {
+                if let Ok(s) = std::str::from_utf8(m) {
+                    if let Ok(v) = s.parse::<i64>() {
+                        if is.add(v) {
+                            added += 1;
+                        }
+                    }
+                }
+            }
+            // Upgrade if threshold exceeded
+            if is.len() > INTSET_THRESHOLD {
+                entry.upgrade_to_set();
+            }
+        }
         _ => {
             return RespValue::Error(
                 "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
             );
-        }
-    };
-
-    let mut added: i64 = 0;
-    for m in members {
-        if set.insert(m.clone()) {
-            added += 1;
         }
     }
 
@@ -56,12 +91,12 @@ pub fn smembers(store: &Arc<Store>, args: &[Bytes]) -> RespValue {
         }
     };
 
-    match entry {
-        DataType::Set(s) => {
+    match entry.to_set_clone() {
+        Some(s) => {
             let arr: Vec<RespValue> = s.iter().map(|m| bulk(m.clone())).collect();
             RespValue::Array(Some(arr))
         }
-        _ => RespValue::Error(
+        None => RespValue::Error(
             "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
         ),
     }
@@ -82,15 +117,10 @@ pub fn sismember(store: &Arc<Store>, args: &[Bytes]) -> RespValue {
         None => return RespValue::Integer(0),
     };
 
-    match entry {
-        DataType::Set(s) => {
-            if s.contains(member) {
-                RespValue::Integer(1)
-            } else {
-                RespValue::Integer(0)
-            }
-        }
-        _ => RespValue::Error(
+    match entry.set_contains(member) {
+        Some(true) => RespValue::Integer(1),
+        Some(false) => RespValue::Integer(0),
+        None => RespValue::Error(
             "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
         ),
     }
@@ -115,21 +145,17 @@ pub fn smismember(store: &Arc<Store>, args: &[Bytes]) -> RespValue {
         }
     };
 
-    match entry {
-        DataType::Set(s) => {
+    match entry.to_set_clone() {
+        Some(s) => {
             let arr: Vec<RespValue> = members
                 .iter()
                 .map(|m| {
-                    if s.contains(m) {
-                        RespValue::Integer(1)
-                    } else {
-                        RespValue::Integer(0)
-                    }
+                    if s.contains(m) { RespValue::Integer(1) } else { RespValue::Integer(0) }
                 })
                 .collect();
             RespValue::Array(Some(arr))
         }
-        _ => RespValue::Error(
+        None => RespValue::Error(
             "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
         ),
     }
@@ -149,9 +175,9 @@ pub fn scard(store: &Arc<Store>, args: &[Bytes]) -> RespValue {
         None => return RespValue::Integer(0),
     };
 
-    match entry {
-        DataType::Set(s) => RespValue::Integer(s.len() as i64),
-        _ => RespValue::Error(
+    match entry.set_len() {
+        Some(n) => RespValue::Integer(n as i64),
+        None => RespValue::Error(
             "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
         ),
     }
@@ -172,9 +198,9 @@ pub fn srem(store: &Arc<Store>, args: &[Bytes]) -> RespValue {
         None => return RespValue::Integer(0),
     };
 
-    let set = match &mut entry {
-        DataType::Set(s) => s,
-        _ => {
+    let set = match entry.as_set_mut() {
+        Some(s) => s,
+        None => {
             return RespValue::Error(
                 "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
             );
@@ -225,9 +251,9 @@ pub fn spop(store: &Arc<Store>, args: &[Bytes]) -> RespValue {
         }
     };
 
-    let set = match &mut entry {
-        DataType::Set(s) => s,
-        _ => {
+    let set = match entry.as_set_mut() {
+        Some(s) => s,
+        None => {
             return RespValue::Error(
                 "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
             );
@@ -280,14 +306,15 @@ pub fn srandmember(store: &Arc<Store>, args: &[Bytes]) -> RespValue {
         }
     };
 
-    let set = match &entry {
-        DataType::Set(s) => s,
-        _ => {
+    let srand_set = match entry.to_set_clone() {
+        Some(s) => s,
+        None => {
             return RespValue::Error(
                 "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
             );
         }
     };
+    let set = &srand_set;
 
     if set.is_empty() {
         return if args.len() == 2 {
@@ -356,9 +383,9 @@ pub fn smove(store: &Arc<Store>, args: &[Bytes]) -> RespValue {
         None => return RespValue::Integer(0),
     };
 
-    let src_set = match &mut src_entry {
-        DataType::Set(s) => s,
-        _ => {
+    let src_set = match src_entry.as_set_mut() {
+        Some(s) => s,
+        None => {
             return RespValue::Error(
                 "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
             );
@@ -376,11 +403,11 @@ pub fn smove(store: &Arc<Store>, args: &[Bytes]) -> RespValue {
         .map(|e| e.data.clone())
         .unwrap_or_else(|| DataType::Set(HashSet::new()));
 
-    match &mut dst_entry {
-        DataType::Set(s) => {
+    match dst_entry.as_set_mut() {
+        Some(s) => {
             s.insert(member.clone());
         }
-        _ => {
+        None => {
             return RespValue::Error(
                 "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
             );
@@ -404,6 +431,7 @@ pub fn sunion(store: &Arc<Store>, args: &[Bytes]) -> RespValue {
         if let Some(entry) = store.get(key) {
             match &entry.data {
                 DataType::Set(s) => result_set.extend(s.iter().cloned()),
+                DataType::IntSet(is) => result_set.extend(is.iter().map(|v| bytes::Bytes::from(v.to_string()))),
                 _ => {
                     return RespValue::Error(
                         "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
@@ -430,6 +458,7 @@ pub fn sinter(store: &Arc<Store>, args: &[Bytes]) -> RespValue {
         if let Some(entry) = store.get(key) {
             match &entry.data {
                 DataType::Set(s) => sets.push(s.clone()),
+                DataType::IntSet(is) => sets.push(is.iter().map(|v| bytes::Bytes::from(v.to_string())).collect()),
                 _ => {
                     return RespValue::Error(
                         "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
@@ -477,6 +506,7 @@ pub fn sdiff(store: &Arc<Store>, args: &[Bytes]) -> RespValue {
         if let Some(entry) = store.get(key) {
             match &entry.data {
                 DataType::Set(s) => sets.push(s.clone()),
+                DataType::IntSet(is) => sets.push(is.iter().map(|v| bytes::Bytes::from(v.to_string())).collect()),
                 _ => {
                     return RespValue::Error(
                         "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
@@ -518,6 +548,7 @@ pub fn sunionstore(store: &Arc<Store>, args: &[Bytes]) -> RespValue {
         if let Some(entry) = store.get(key) {
             match &entry.data {
                 DataType::Set(s) => result_set.extend(s.iter().cloned()),
+                DataType::IntSet(is) => result_set.extend(is.iter().map(|v| bytes::Bytes::from(v.to_string()))),
                 _ => {
                     return RespValue::Error(
                         "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
@@ -547,6 +578,7 @@ pub fn sinterstore(store: &Arc<Store>, args: &[Bytes]) -> RespValue {
         if let Some(entry) = store.get(key) {
             match &entry.data {
                 DataType::Set(s) => sets.push(s.clone()),
+                DataType::IntSet(is) => sets.push(is.iter().map(|v| bytes::Bytes::from(v.to_string())).collect()),
                 _ => {
                     return RespValue::Error(
                         "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
@@ -598,6 +630,7 @@ pub fn sdiffstore(store: &Arc<Store>, args: &[Bytes]) -> RespValue {
         if let Some(entry) = store.get(key) {
             match &entry.data {
                 DataType::Set(s) => sets.push(s.clone()),
+                DataType::IntSet(is) => sets.push(is.iter().map(|v| bytes::Bytes::from(v.to_string())).collect()),
                 _ => {
                     return RespValue::Error(
                         "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
@@ -689,14 +722,15 @@ pub fn sscan(store: &Arc<Store>, args: &[Bytes]) -> RespValue {
         }
     };
 
-    let set = match entry {
-        DataType::Set(s) => s,
-        _ => {
+    let set_clone = match entry.to_set_clone() {
+        Some(s) => s,
+        None => {
             return RespValue::Error(
                 "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
             );
         }
     };
+    let set = set_clone;
 
     let mut members: Vec<Bytes> = set.iter().cloned().collect();
     members.sort();
@@ -793,6 +827,7 @@ pub fn sintercard(store: &Arc<Store>, args: &[Bytes]) -> RespValue {
         if let Some(entry) = store.get(key) {
             match &entry.data {
                 DataType::Set(s) => sets.push(s.clone()),
+                DataType::IntSet(is) => sets.push(is.iter().map(|v| bytes::Bytes::from(v.to_string())).collect()),
                 _ => {
                     return RespValue::Error(
                         "WRONGTYPE Operation against a key holding the wrong kind of value".into(),

@@ -3,7 +3,9 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::Duration;
 use valkey_proto::RespValue;
-use valkey_storage::{DataType, Entry, Store};
+use valkey_storage::{DataType, Entry, ListPack, Store};
+
+const LIST_COMPACT_THRESHOLD: usize = 128;
 
 pub async fn handle(a: &[Bytes], s: &Arc<Store>) -> RespValue {
     if a.is_empty() {
@@ -46,20 +48,30 @@ async fn lp(a: &[Bytes], s: &Arc<Store>) -> RespValue {
     let mut e = s
         .keyspace
         .entry(a[0].clone())
-        .or_insert_with(|| Entry::new(DataType::List(VecDeque::new()), None));
-    let l = match &mut e.data {
-        DataType::List(l) => l,
-        _ => {
-            return RespValue::Error(
-                "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
-            )
-        }
-    };
-    for v in &a[1..] {
-        l.push_front(v.clone());
+        .or_insert_with(|| Entry::new(DataType::ListPack(ListPack::new()), None));
+    if !e.data.is_list_type() {
+        return RespValue::Error(
+            "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
+        );
     }
+    let len = match &mut e.data {
+        DataType::ListPack(lp) => {
+            for v in &a[1..] {
+                lp.push_front(valkey_storage::ListPackEntry::String(v.clone()));
+            }
+            lp.len()
+        }
+        DataType::List(l) => {
+            for v in &a[1..] {
+                l.push_front(v.clone());
+            }
+            l.len()
+        }
+        _ => unreachable!(),
+    };
+    e.data.maybe_upgrade_list(LIST_COMPACT_THRESHOLD);
     s.notify_watchers(&a[0]);
-    RespValue::Integer(l.len() as i64)
+    RespValue::Integer(len as i64)
 }
 
 // ---------------------------------------------------------------------------
@@ -72,20 +84,30 @@ async fn rp(a: &[Bytes], s: &Arc<Store>) -> RespValue {
     let mut e = s
         .keyspace
         .entry(a[0].clone())
-        .or_insert_with(|| Entry::new(DataType::List(VecDeque::new()), None));
-    let l = match &mut e.data {
-        DataType::List(l) => l,
-        _ => {
-            return RespValue::Error(
-                "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
-            )
-        }
-    };
-    for v in &a[1..] {
-        l.push_back(v.clone());
+        .or_insert_with(|| Entry::new(DataType::ListPack(ListPack::new()), None));
+    if !e.data.is_list_type() {
+        return RespValue::Error(
+            "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
+        );
     }
+    let len = match &mut e.data {
+        DataType::ListPack(lp) => {
+            for v in &a[1..] {
+                lp.push_back_bytes(v.clone());
+            }
+            lp.len()
+        }
+        DataType::List(l) => {
+            for v in &a[1..] {
+                l.push_back(v.clone());
+            }
+            l.len()
+        }
+        _ => unreachable!(),
+    };
+    e.data.maybe_upgrade_list(LIST_COMPACT_THRESHOLD);
     s.notify_watchers(&a[0]);
-    RespValue::Integer(l.len() as i64)
+    RespValue::Integer(len as i64)
 }
 
 // ---------------------------------------------------------------------------
@@ -105,14 +127,12 @@ async fn lpo(a: &[Bytes], s: &Arc<Store>) -> RespValue {
     };
     match s.keyspace.get_mut(&a[0]) {
         Some(mut e) => {
-            let l = match &mut e.data {
-                DataType::List(l) => l,
-                _ => {
-                    return RespValue::Error(
-                        "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
-                    )
-                }
-            };
+            let l = match e.data.as_list_mut() {
+                Some(l) => l,
+                None => return RespValue::Error(
+                    "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
+                ),
+                };
             if l.is_empty() {
                 return RespValue::BulkString(None);
             }
@@ -167,14 +187,12 @@ async fn rpo(a: &[Bytes], s: &Arc<Store>) -> RespValue {
     };
     match s.keyspace.get_mut(&a[0]) {
         Some(mut e) => {
-            let l = match &mut e.data {
-                DataType::List(l) => l,
-                _ => {
-                    return RespValue::Error(
-                        "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
-                    )
-                }
-            };
+            let l = match e.data.as_list_mut() {
+                Some(l) => l,
+                None => return RespValue::Error(
+                    "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
+                ),
+                };
             if l.is_empty() {
                 return RespValue::BulkString(None);
             }
@@ -229,33 +247,14 @@ async fn lr(a: &[Bytes], s: &Arc<Store>) -> RespValue {
     };
     match s.keyspace.get(&a[0]) {
         Some(e) => {
-            let l = match &e.data {
-                DataType::List(l) => l,
-                _ => {
-                    return RespValue::Error(
-                        "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
-                    )
-                }
-            };
-            if l.is_empty() {
-                return RespValue::Array(Some(Vec::new()));
+            match e.data.list_range(st, sp) {
+                Some(items) => RespValue::Array(Some(
+                    items.into_iter().map(|v| RespValue::BulkString(Some(v))).collect(),
+                )),
+                None => RespValue::Error(
+                    "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
+                ),
             }
-            let len = l.len() as i64;
-            let si = ni(st, len);
-            let ei = ni(sp, len);
-            if si > ei || si >= len {
-                return RespValue::Array(Some(Vec::new()));
-            }
-            let ei = ei.min(len - 1);
-            let mut r = Vec::new();
-            for i in si..=ei {
-                r.push(l[i as usize].clone());
-            }
-            RespValue::Array(Some(
-                r.into_iter()
-                    .map(|v| RespValue::BulkString(Some(v)))
-                    .collect(),
-            ))
         }
         None => RespValue::Array(Some(Vec::new())),
     }
@@ -269,9 +268,9 @@ async fn ll(a: &[Bytes], s: &Arc<Store>) -> RespValue {
         return RespValue::Error("ERR wrong number of arguments for 'llen' command".into());
     }
     match s.keyspace.get(&a[0]) {
-        Some(e) => match &e.data {
-            DataType::List(l) => RespValue::Integer(l.len() as i64),
-            _ => RespValue::Error(
+        Some(e) => match e.data.list_len() {
+            Some(n) => RespValue::Integer(n as i64),
+            None => RespValue::Error(
                 "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
             ),
         },
@@ -292,23 +291,12 @@ async fn li(a: &[Bytes], s: &Arc<Store>) -> RespValue {
     };
     match s.keyspace.get(&a[0]) {
         Some(e) => {
-            let l = match &e.data {
-                DataType::List(l) => l,
-                _ => {
-                    return RespValue::Error(
-                        "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
-                    )
-                }
-            };
-            if l.is_empty() {
-                return RespValue::BulkString(None);
-            }
-            let len = l.len() as i64;
-            let i = ni(idx, len);
-            if i < 0 || i >= len {
-                RespValue::BulkString(None)
-            } else {
-                RespValue::BulkString(Some(l[i as usize].clone()))
+            match e.data.list_get(idx) {
+                Some(v) => RespValue::BulkString(Some(v)),
+                None if e.data.is_list_type() => RespValue::BulkString(None),
+                None => RespValue::Error(
+                    "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
+                ),
             }
         }
         None => RespValue::BulkString(None),
@@ -328,14 +316,12 @@ async fn ls(a: &[Bytes], s: &Arc<Store>) -> RespValue {
     };
     match s.keyspace.get_mut(&a[0]) {
         Some(mut e) => {
-            let l = match &mut e.data {
-                DataType::List(l) => l,
-                _ => {
-                    return RespValue::Error(
-                        "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
-                    )
-                }
-            };
+            let l = match e.data.as_list_mut() {
+                Some(l) => l,
+                None => return RespValue::Error(
+                    "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
+                ),
+                };
             let len = l.len() as i64;
             let i = ni(idx, len);
             if i < 0 || i >= len {
@@ -366,14 +352,12 @@ async fn lins(a: &[Bytes], s: &Arc<Store>) -> RespValue {
     };
     match s.keyspace.get_mut(&a[0]) {
         Some(mut e) => {
-            let l = match &mut e.data {
-                DataType::List(l) => l,
-                _ => {
-                    return RespValue::Error(
-                        "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
-                    )
-                }
-            };
+            let l = match e.data.as_list_mut() {
+                Some(l) => l,
+                None => return RespValue::Error(
+                    "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
+                ),
+                };
             match l.iter().position(|v| v == &a[2]) {
                 Some(p) => {
                     let ip = if before { p } else { p + 1 };
@@ -400,14 +384,12 @@ async fn lre(a: &[Bytes], s: &Arc<Store>) -> RespValue {
     };
     match s.keyspace.get_mut(&a[0]) {
         Some(mut e) => {
-            let l = match &mut e.data {
-                DataType::List(l) => l,
-                _ => {
-                    return RespValue::Error(
-                        "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
-                    )
-                }
-            };
+            let l = match e.data.as_list_mut() {
+                Some(l) => l,
+                None => return RespValue::Error(
+                    "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
+                ),
+                };
             let lb = l.len();
             if c > 0 {
                 let mut rm = c;
@@ -461,14 +443,12 @@ async fn ltr(a: &[Bytes], s: &Arc<Store>) -> RespValue {
     };
     match s.keyspace.get_mut(&a[0]) {
         Some(mut e) => {
-            let l = match &mut e.data {
-                DataType::List(l) => l,
-                _ => {
-                    return RespValue::Error(
-                        "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
-                    )
-                }
-            };
+            let l = match e.data.as_list_mut() {
+                Some(l) => l,
+                None => return RespValue::Error(
+                    "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
+                ),
+                };
             if l.is_empty() {
                 return RespValue::SimpleString("OK".into());
             }
@@ -517,14 +497,12 @@ async fn lmo(a: &[Bytes], s: &Arc<Store>) -> RespValue {
     };
     let popped = match s.keyspace.get_mut(&a[0]) {
         Some(mut e) => {
-            let l = match &mut e.data {
-                DataType::List(l) => l,
-                _ => {
-                    return RespValue::Error(
-                        "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
-                    )
-                }
-            };
+            let l = match e.data.as_list_mut() {
+                Some(l) => l,
+                None => return RespValue::Error(
+                    "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
+                ),
+                };
             if l.is_empty() {
                 None
             } else {
@@ -547,15 +525,13 @@ async fn lmo(a: &[Bytes], s: &Arc<Store>) -> RespValue {
             let mut e = s
                 .keyspace
                 .entry(a[1].clone())
-                .or_insert_with(|| Entry::new(DataType::List(VecDeque::new()), None));
-            let l = match &mut e.data {
-                DataType::List(l) => l,
-                _ => {
-                    return RespValue::Error(
-                        "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
-                    )
-                }
-            };
+                .or_insert_with(|| Entry::new(DataType::ListPack(ListPack::new()), None));
+            let l = match e.data.as_list_mut() {
+                Some(l) => l,
+                None => return RespValue::Error(
+                    "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
+                ),
+                };
             if tl {
                 l.push_front(val.clone());
             } else {
@@ -585,10 +561,8 @@ async fn bl(a: &[Bytes], s: &Arc<Store>) -> RespValue {
     for key in keys {
         match s.keyspace.get_mut(key) {
             Some(mut e) => {
-                let l = match &mut e.data {
-                    DataType::List(l) => l,
-                    _ => continue,
-                };
+                if !e.data.is_list_type() { continue; }
+                    let l = e.data.as_list_mut().unwrap();
                 if !l.is_empty() {
                     let v = l.pop_front().unwrap();
                     if l.is_empty() {
@@ -631,10 +605,8 @@ async fn blpop_block_forever(keys: &[Bytes], s: &Arc<Store>) -> RespValue {
         for (key, _) in &receivers {
             match s.keyspace.get_mut(key) {
                 Some(mut e) => {
-                    let l = match &mut e.data {
-                        DataType::List(l) => l,
-                        _ => continue,
-                    };
+                    if !e.data.is_list_type() { continue; }
+                        let l = e.data.as_list_mut().unwrap();
                     if !l.is_empty() {
                         let v = l.pop_front().unwrap();
                         if l.is_empty() {
@@ -683,10 +655,8 @@ async fn br(a: &[Bytes], s: &Arc<Store>) -> RespValue {
     for key in keys {
         match s.keyspace.get_mut(key) {
             Some(mut e) => {
-                let l = match &mut e.data {
-                    DataType::List(l) => l,
-                    _ => continue,
-                };
+                if !e.data.is_list_type() { continue; }
+                    let l = e.data.as_list_mut().unwrap();
                 if !l.is_empty() {
                     let v = l.pop_back().unwrap();
                     if l.is_empty() {
@@ -729,10 +699,8 @@ async fn brpop_block_forever(keys: &[Bytes], s: &Arc<Store>) -> RespValue {
         for (key, _) in &receivers {
             match s.keyspace.get_mut(key) {
                 Some(mut e) => {
-                    let l = match &mut e.data {
-                        DataType::List(l) => l,
-                        _ => continue,
-                    };
+                    if !e.data.is_list_type() { continue; }
+                        let l = e.data.as_list_mut().unwrap();
                     if !l.is_empty() {
                         let v = l.pop_back().unwrap();
                         if l.is_empty() {
@@ -833,10 +801,10 @@ async fn lpos(a: &[Bytes], s: &Arc<Store>) -> RespValue {
         i += 1;
     }
 
-    let list = match s.keyspace.get(key) {
-        Some(e) => match &e.data {
-            DataType::List(l) => l.clone(),
-            _ => {
+    let list: Vec<Bytes> = match s.keyspace.get(key) {
+        Some(e) => match e.data.list_range(i64::MIN, i64::MAX) {
+            Some(items) => items,
+            None => {
                 return RespValue::Error(
                     "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
                 )
@@ -965,10 +933,8 @@ async fn lmpop(a: &[Bytes], s: &Arc<Store>) -> RespValue {
     for key in keys {
         match s.keyspace.get_mut(key) {
             Some(mut e) => {
-                let l = match &mut e.data {
-                    DataType::List(l) => l,
-                    _ => continue,
-                };
+                if !e.data.is_list_type() { continue; }
+                    let l = e.data.as_list_mut().unwrap();
                 if !l.is_empty() {
                     let pop_count = count.unwrap_or(1).min(l.len());
                     let mut popped = Vec::with_capacity(pop_count);
@@ -1068,10 +1034,8 @@ async fn blmpop(a: &[Bytes], s: &Arc<Store>) -> RespValue {
     for key in keys {
         match s.keyspace.get_mut(key) {
             Some(mut e) => {
-                let l = match &mut e.data {
-                    DataType::List(l) => l,
-                    _ => continue,
-                };
+                if !e.data.is_list_type() { continue; }
+                    let l = e.data.as_list_mut().unwrap();
                 if !l.is_empty() {
                     let pop_count = count.unwrap_or(1).min(l.len());
                     let mut popped = Vec::with_capacity(pop_count);
@@ -1127,10 +1091,8 @@ async fn blmpop_block_forever(
         for (key, _) in &receivers {
             match s.keyspace.get_mut(key) {
                 Some(mut e) => {
-                    let l = match &mut e.data {
-                        DataType::List(l) => l,
-                        _ => continue,
-                    };
+                    if !e.data.is_list_type() { continue; }
+                        let l = e.data.as_list_mut().unwrap();
                     if !l.is_empty() {
                         let pop_count = count.unwrap_or(1).min(l.len());
                         let mut popped = Vec::with_capacity(pop_count);
@@ -1206,14 +1168,12 @@ async fn blmove(a: &[Bytes], s: &Arc<Store>) -> RespValue {
     // Fast path: try non-blocking first
     let popped = match s.keyspace.get_mut(source) {
         Some(mut e) => {
-            let l = match &mut e.data {
-                DataType::List(l) => l,
-                _ => {
-                    return RespValue::Error(
-                        "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
-                    )
-                }
-            };
+            let l = match e.data.as_list_mut() {
+                Some(l) => l,
+                None => return RespValue::Error(
+                    "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
+                ),
+                };
             if l.is_empty() {
                 None
             } else {
@@ -1257,10 +1217,10 @@ fn push_to_dest(s: &Arc<Store>, dest: &Bytes, val: Bytes, to_left: bool) {
     let mut e = s
         .keyspace
         .entry(dest.clone())
-        .or_insert_with(|| Entry::new(DataType::List(VecDeque::new()), None));
-    let l = match &mut e.data {
-        DataType::List(l) => l,
-        _ => return, // Should not happen with new list
+        .or_insert_with(|| Entry::new(DataType::ListPack(ListPack::new()), None));
+    let l = match e.data.as_list_mut() {
+        Some(l) => l,
+        None => return,
     };
     if to_left {
         l.push_front(val);
@@ -1283,9 +1243,9 @@ async fn blmove_block_forever(
         // Try to pop from source
         let popped = match s.keyspace.get_mut(source) {
             Some(mut e) => {
-                let l = match &mut e.data {
-                    DataType::List(l) => l,
-                    _ => {
+                let l = match e.data.as_list_mut() {
+                    Some(l) => l,
+                    None => {
                         return RespValue::Error(
                             "WRONGTYPE Operation against a key holding the wrong kind of value"
                                 .into(),

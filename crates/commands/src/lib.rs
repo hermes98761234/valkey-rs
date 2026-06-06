@@ -35,6 +35,7 @@ use valkey_storage::Store;
 pub mod acl;
 pub mod asking;
 pub mod cluster;
+pub mod geo;
 pub mod hash;
 pub mod keys;
 pub mod list;
@@ -135,6 +136,10 @@ pub async fn dispatch_ctx(cmd: Vec<Bytes>, store: Db, ctx: &CommandCtx) -> RespV
         "SADD" | "SMEMBERS" | "SISMEMBER" | "SMISMEMBER" | "SCARD" | "SREM" | "SPOP"
         | "SRANDMEMBER" | "SMOVE" | "SUNION" | "SINTER" | "SDIFF" | "SUNIONSTORE"
         | "SINTERSTORE" | "SINTERCARD" | "SDIFFSTORE" | "SSCAN" => set::handle(&cmd, &store),
+        "GEOADD" | "GEODIST" | "GEOHASH" | "GEOPOS" | "GEOSEARCH" | "GEOSEARCHSTORE"
+        | "GEORADIUS" | "GEORADIUS_RO" | "GEORADIUSBYMEMBER" | "GEORADIUSBYMEMBER_RO" => {
+            geo::handle(&cmd, &store)
+        }
         "SUBSCRIBE" | "UNSUBSCRIBE" | "PSUBSCRIBE" | "PUNSUBSCRIBE" | "PUBLISH" | "PUBSUB"
         | "SSUBSCRIBE" | "SUNSUBSCRIBE" | "SPUBLISH" => {
             return RespValue::Error("ERR PubSub commands must be handled in pub/sub mode".into());

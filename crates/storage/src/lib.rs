@@ -29,6 +29,12 @@ use dashmap::mapref::one::Ref;
 use dashmap::DashMap;
 use ordered_float::OrderedFloat;
 
+mod listpack;
+mod intset;
+
+pub use intset::IntSet;
+pub use listpack::{ListPack, ListPackEntry};
+
 #[derive(Debug, Clone)]
 pub enum DataType {
     String(Bytes),
@@ -37,6 +43,155 @@ pub enum DataType {
     Set(HashSet<Bytes>),
     ZSet(ZSetData),
     Stream(StreamData),
+    ListPack(ListPack),
+    IntSet(IntSet),
+}
+
+impl DataType {
+    /// Convert ListPack → List in-place. No-op if already a List.
+    pub fn upgrade_to_list(&mut self) {
+        if let DataType::ListPack(lp) = self {
+            let v = lp.to_vec().into_iter().collect::<VecDeque<Bytes>>();
+            *self = DataType::List(v);
+        }
+    }
+
+    /// Convert IntSet → Set in-place. No-op if already a Set.
+    pub fn upgrade_to_set(&mut self) {
+        if let DataType::IntSet(is) = self {
+            let s = is.iter().map(|v| Bytes::from(v.to_string())).collect::<HashSet<Bytes>>();
+            *self = DataType::Set(s);
+        }
+    }
+
+    /// Upgrade list compact encoding if it exceeds the threshold.
+    pub fn maybe_upgrade_list(&mut self, threshold: usize) {
+        if let DataType::ListPack(lp) = self {
+            if lp.len() > threshold {
+                self.upgrade_to_list();
+            }
+        }
+    }
+
+    /// Upgrade intset to full set if it exceeds the threshold.
+    pub fn maybe_upgrade_intset(&mut self, threshold: usize) {
+        if let DataType::IntSet(is) = self {
+            if is.len() > threshold {
+                self.upgrade_to_set();
+            }
+        }
+    }
+
+    /// Returns true if this is a list-like type (List or ListPack).
+    pub fn is_list_type(&self) -> bool {
+        matches!(self, DataType::List(_) | DataType::ListPack(_))
+    }
+
+    /// Returns true if this is a set-like type (Set or IntSet).
+    pub fn is_set_type(&self) -> bool {
+        matches!(self, DataType::Set(_) | DataType::IntSet(_))
+    }
+
+    /// Get a mutable reference to the inner List, upgrading from ListPack if needed.
+    /// Returns None if the DataType is not a list type (WRONGTYPE case).
+    pub fn as_list_mut(&mut self) -> Option<&mut VecDeque<Bytes>> {
+        if matches!(self, DataType::ListPack(_)) {
+            let v = if let DataType::ListPack(lp) = self {
+                lp.to_vec().into_iter().collect::<VecDeque<Bytes>>()
+            } else {
+                unreachable!()
+            };
+            *self = DataType::List(v);
+        }
+        match self {
+            DataType::List(l) => Some(l),
+            _ => None,
+        }
+    }
+
+    /// Get the list length without upgrading the encoding.
+    pub fn list_len(&self) -> Option<usize> {
+        match self {
+            DataType::List(l) => Some(l.len()),
+            DataType::ListPack(lp) => Some(lp.len()),
+            _ => None,
+        }
+    }
+
+    /// Get a list element by index without upgrading the encoding.
+    pub fn list_get(&self, index: i64) -> Option<Bytes> {
+        let len = self.list_len()? as i64;
+        let i = if index < 0 { len + index } else { index };
+        if i < 0 || i >= len {
+            return None;
+        }
+        let i = i as usize;
+        match self {
+            DataType::List(l) => l.get(i).cloned(),
+            DataType::ListPack(lp) => lp.get(i).map(|e| e.to_bytes()),
+            _ => None,
+        }
+    }
+
+    /// Get a list range without upgrading the encoding.
+    pub fn list_range(&self, start: i64, stop: i64) -> Option<Vec<Bytes>> {
+        let len = self.list_len()? as i64;
+        let s = if start < 0 { (len + start).max(0) } else { start } as usize;
+        let e = if stop < 0 { (len + stop).max(-1) } else { stop.min(len - 1) } as usize;
+        if s > e || s >= len as usize {
+            return Some(vec![]);
+        }
+        match self {
+            DataType::List(l) => Some(l.iter().skip(s).take(e - s + 1).cloned().collect()),
+            DataType::ListPack(lp) => {
+                Some(lp.iter().skip(s).take(e - s + 1).map(|e| e.to_bytes()).collect())
+            }
+            _ => None,
+        }
+    }
+
+    /// Get a mutable reference to the inner Set, upgrading from IntSet if needed.
+    /// Returns None if the DataType is not a set type (WRONGTYPE case).
+    pub fn as_set_mut(&mut self) -> Option<&mut HashSet<Bytes>> {
+        if matches!(self, DataType::IntSet(_)) {
+            self.upgrade_to_set();
+        }
+        match self {
+            DataType::Set(s) => Some(s),
+            _ => None,
+        }
+    }
+
+    /// Get the set as a cloned HashSet<Bytes>, converting from IntSet if needed.
+    /// Returns None if the DataType is not a set type (WRONGTYPE case).
+    pub fn to_set_clone(&self) -> Option<HashSet<Bytes>> {
+        match self {
+            DataType::Set(s) => Some(s.clone()),
+            DataType::IntSet(is) => Some(is.iter().map(|v| Bytes::from(v.to_string())).collect()),
+            _ => None,
+        }
+    }
+
+    /// Get the set length without upgrading the encoding.
+    pub fn set_len(&self) -> Option<usize> {
+        match self {
+            DataType::Set(s) => Some(s.len()),
+            DataType::IntSet(is) => Some(is.len()),
+            _ => None,
+        }
+    }
+
+    /// Check if member is in the set without upgrading.
+    pub fn set_contains(&self, member: &[u8]) -> Option<bool> {
+        match self {
+            DataType::Set(s) => Some(s.contains(member)),
+            DataType::IntSet(is) => {
+                let v = std::str::from_utf8(member).ok()?.parse::<i64>().ok()?;
+                Some(is.contains(v))
+            }
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -332,6 +487,8 @@ impl Entry {
             DataType::Set(s) => s.iter().map(|b| b.len()).sum::<usize>(),
             DataType::ZSet(_) => std::mem::size_of::<ZSetData>(),
             DataType::Stream(_) => std::mem::size_of::<StreamData>(),
+            DataType::ListPack(lp) => lp.as_bytes().len(),
+            DataType::IntSet(s) => s.as_bytes().len(),
         };
         key_len + data_size + 64
     }
@@ -464,6 +621,8 @@ impl Store {
                 DataType::Set(_) => "set",
                 DataType::ZSet(_) => "zset",
                 DataType::Stream(_) => "stream",
+                DataType::ListPack(_) => "list",
+                DataType::IntSet(_) => "set",
             })
         } else {
             None

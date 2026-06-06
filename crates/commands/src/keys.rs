@@ -484,8 +484,8 @@ async fn cmd_dump(args: &[Bytes], store: &Arc<Store>) -> RespValue {
     let mut buf = Vec::new();
     let type_byte: u8 = match &entry.data {
         DataType::String(_) => 0,
-        DataType::List(_) => 1,
-        DataType::Set(_) => 2,
+        DataType::List(_) | DataType::ListPack(_) => 1,
+        DataType::Set(_) | DataType::IntSet(_) => 2,
         DataType::ZSet(_) => 3,
         DataType::Hash(_) => 4,
         DataType::Stream(_) => 5,
@@ -501,11 +501,29 @@ async fn cmd_dump(args: &[Bytes], store: &Arc<Store>) -> RespValue {
             }
             Bytes::from(v)
         }
+        DataType::ListPack(lp) => {
+            let mut v = Vec::new();
+            for entry in lp.iter() {
+                let bytes = entry.to_bytes();
+                v.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
+                v.extend_from_slice(&bytes);
+            }
+            Bytes::from(v)
+        }
         DataType::Set(s) => {
             let mut v = Vec::new();
             for item in s {
                 v.extend_from_slice(&(item.len() as u32).to_le_bytes());
                 v.extend_from_slice(item);
+            }
+            Bytes::from(v)
+        }
+        DataType::IntSet(s) => {
+            let mut v = Vec::new();
+            for val in s.iter() {
+                let s = val.to_string();
+                v.extend_from_slice(&(s.len() as u32).to_le_bytes());
+                v.extend_from_slice(s.as_bytes());
             }
             Bytes::from(v)
         }

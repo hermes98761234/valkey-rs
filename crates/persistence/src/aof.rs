@@ -356,6 +356,37 @@ pub async fn rewrite(store: &Arc<Store>, path: &Path) -> std::io::Result<()> {
                 // A full implementation would emit XADD commands
                 continue;
             }
+            DataType::ListPack(lp) => {
+                if !lp.is_empty() {
+                    let mut strs: Vec<String> = Vec::new();
+                    for entry in lp.iter() {
+                        let bytes = entry.to_bytes();
+                        if let Ok(s) = std::str::from_utf8(&bytes) {
+                            strs.push(s.to_string());
+                        }
+                    }
+                    if !strs.is_empty() {
+                        let mut parts: Vec<&str> = vec!["RPUSH", key_str];
+                        for s in &strs {
+                            parts.push(s.as_str());
+                        }
+                        write_resp_array(&mut writer, &parts).await?;
+                    }
+                }
+            }
+            DataType::IntSet(s) => {
+                if !s.is_empty() {
+                    let mut strs: Vec<String> = Vec::new();
+                    for val in s.iter() {
+                        strs.push(val.to_string());
+                    }
+                    let mut parts: Vec<&str> = vec!["SADD", key_str];
+                    for s in &strs {
+                        parts.push(s.as_str());
+                    }
+                    write_resp_array(&mut writer, &parts).await?;
+                }
+            }
         }
 
         // Write TTL if present

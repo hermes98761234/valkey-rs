@@ -337,6 +337,14 @@ impl Default for ServerConfig {
         params.insert("client-query-buffer-limit".into(), "1073741824".into());
         params.insert("dbfilename".into(), "dump.rdb".into());
         params.insert("dir".into(), ".".into());
+        // Compact encoding thresholds
+        params.insert("list-max-listpack-size".into(), "128".into());
+        params.insert("hash-max-listpack-entries".into(), "128".into());
+        params.insert("hash-max-listpack-value".into(), "64".into());
+        params.insert("set-max-intset-entries".into(), "512".into());
+        params.insert("set-max-listpack-entries".into(), "128".into());
+        params.insert("zset-max-listpack-entries".into(), "128".into());
+        params.insert("zset-max-listpack-value".into(), "64".into());
         Self {
             params,
             tls_port: None,
@@ -2658,15 +2666,26 @@ async fn cmd_object_encoding(args: &[Bytes], store: &Arc<Store>) -> RespValue {
             "ERR wrong number of arguments for 'object|encoding' command".into(),
         );
     }
-    match store.type_of(&args[0]) {
-        Some("string") => RespValue::bulk(Bytes::from("embstr")),
-        Some("list") => RespValue::bulk(Bytes::from("quicklist")),
-        Some("hash") => RespValue::bulk(Bytes::from("hashtable")),
-        Some("set") => RespValue::bulk(Bytes::from("hashtable")),
-        Some("zset") => RespValue::bulk(Bytes::from("skiplist")),
-        Some("stream") => RespValue::bulk(Bytes::from("stream")),
-        Some(_) => RespValue::bulk(Bytes::from("unknown")),
-        None => RespValue::null_bulk(),
+    if let Some(entry) = store.keyspace.get(&args[0]) {
+        let encoding = match &entry.data {
+            valkey_storage::DataType::String(s) => {
+                if s.len() <= 39 {
+                    "embstr"
+                } else {
+                    "raw"
+                }
+            }
+            valkey_storage::DataType::List(_) => "quicklist",
+            valkey_storage::DataType::ListPack(_) => "listpack",
+            valkey_storage::DataType::Hash(_) => "hashtable",
+            valkey_storage::DataType::Set(_) => "hashtable",
+            valkey_storage::DataType::IntSet(_) => "intset",
+            valkey_storage::DataType::ZSet(_) => "skiplist",
+            valkey_storage::DataType::Stream(_) => "stream",
+        };
+        RespValue::bulk(Bytes::from(encoding))
+    } else {
+        RespValue::null_bulk()
     }
 }
 

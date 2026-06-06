@@ -187,8 +187,8 @@ pub async fn save(store: &Arc<Store>, path: &Path) -> Result<()> {
         // Type byte
         let type_byte: u8 = match &entry.data {
             DataType::String(_) => RDB_TYPE_STRING,
-            DataType::List(_) => RDB_TYPE_LIST,
-            DataType::Set(_) => RDB_TYPE_SET,
+            DataType::List(_) | DataType::ListPack(_) => RDB_TYPE_LIST,
+            DataType::Set(_) | DataType::IntSet(_) => RDB_TYPE_SET,
             DataType::ZSet(_) => RDB_TYPE_ZSET,
             DataType::Hash(_) => RDB_TYPE_HASH,
             DataType::Stream(_) => RDB_TYPE_STREAM,
@@ -244,6 +244,18 @@ pub async fn save(store: &Arc<Store>, path: &Path) -> Result<()> {
                 }
                 buf.extend_from_slice(&stream.last_id.ms.to_le_bytes());
                 buf.extend_from_slice(&stream.last_id.seq.to_le_bytes());
+            }
+            DataType::ListPack(lp) => {
+                encode_length(&mut buf, lp.len() as u64);
+                for entry in lp.iter() {
+                    encode_string(&mut buf, &entry.to_bytes());
+                }
+            }
+            DataType::IntSet(s) => {
+                encode_length(&mut buf, s.len() as u64);
+                for val in s.iter() {
+                    encode_string(&mut buf, &Bytes::from(val.to_string()));
+                }
             }
         }
     }
