@@ -49,10 +49,10 @@ fn encode_backlen(buf: &mut Vec<u8>, len: usize) {
 
 fn encode_integer(buf: &mut Vec<u8>, val: i64) -> usize {
     let start = buf.len();
-    if val >= 0 && val <= 63 {
+    if (0..=63).contains(&val) {
         // 6-bit unsigned in 1 byte: 00xxxxxx
         buf.push(val as u8);
-    } else if val >= -8192 && val <= 8191 {
+    } else if (-8192..=8191).contains(&val) {
         // 14-bit signed in 2 bytes: 01xxxxxx xxxxxxxx
         let v = val as i16;
         let encoded = v as u16; // Reinterpret bits
