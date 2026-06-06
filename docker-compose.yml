@@ -5,10 +5,8 @@ services:
       dockerfile: Dockerfile
     ports:
       - "6379:6379"
-    volumes:
-      - ./data:/data
     healthcheck:
-      test: ["CMD", "sh", "-c", "echo PING | nc -w 1 localhost 6379 | grep -q PONG"]
+      test: ["CMD", "sh", "-c", "timeout 2 bash -c 'echo > /dev/tcp/localhost/6379' 2>/dev/null"]
       interval: 10s
       timeout: 5s
       retries: 5

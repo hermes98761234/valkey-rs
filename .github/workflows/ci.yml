@@ -29,6 +29,20 @@ jobs:
       - name: Fmt
         run: cargo fmt --all --check
 
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Docker Compose
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y docker-compose-plugin
+      - name: Build image
+        run: docker build -t valkey-rs .
+      - name: Run integration tests
+        run: bash tests/integration/run_tests.sh
+
   coverage:
     name: Coverage
     runs-on: ubuntu-latest

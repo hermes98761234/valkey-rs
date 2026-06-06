@@ -14,7 +14,7 @@ use tokio_rustls::server::TlsStream;
 use tokio_rustls::TlsAcceptor;
 use tokio_util::codec::Framed;
 use tracing::{info, warn};
-use valkey_commands::dispatch;
+use valkey_commands::{dispatch_ctx, CommandCtx};
 use valkey_persistence::aof::{AofWriter, FsyncPolicy};
 use valkey_proto::{RespDecoder, RespEncoder, RespValue};
 use valkey_storage::Store;
@@ -166,6 +166,7 @@ async fn handle_connection<S>(stream: S, store: Arc<Store>) -> anyhow::Result<()
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
+    let cmd_ctx = Arc::new(CommandCtx::new());
     let (read_half, write_half) = tokio::io::split(stream);
     let mut framed_read = Framed::new(read_half, RespDecoder::default());
     let mut framed_write = Framed::new(write_half, RespEncoder);
@@ -202,7 +203,7 @@ where
             }
         }
 
-        let response = dispatch(cmd_bytes.clone(), Arc::clone(&store)).await;
+        let response = dispatch_ctx(cmd_bytes.clone(), Arc::clone(&store), &cmd_ctx).await;
 
         // If this is a write command and it succeeded, append to AOF and propagate to replicas
         if is_write_command(&cmd_bytes) {
@@ -302,9 +303,9 @@ fn is_write_command(cmd: &[Bytes]) -> bool {
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
 
-    let addr = "0.0.0.0:6379";
-    let listener = TcpListener::bind(addr).await?;
-    info!("valkey-rs listening on {addr}");
+        let addr = "0.0.0.0:6379";
+        let listener = TcpListener::bind(addr).await?;
+        info!("valkey-rs listening on {addr}");
 
     let store = Store::new();
 
