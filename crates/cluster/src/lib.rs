@@ -7,7 +7,7 @@ pub use commands::{ClusterCommandHandler, ClusterRouter, RouteAction};
 pub use gossip::{GossipConfig, GossipManager, GossipMessage, GossipNodeEntry};
 pub use slots::key_hash_slot;
 pub use state::{
-    generate_node_id, ClusterState, NodeFlags, NodeInfo, NodeRole, SlotRange, NUM_SLOTS,
+    generate_node_id, ClusterState, NodeFlags, NodeInfo, NodeRole, SlotRange, SlotState, NUM_SLOTS,
 };
 
 use std::path::Path;

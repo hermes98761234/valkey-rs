@@ -1,5 +1,5 @@
 use crate::slots::key_hash_slot;
-use crate::state::{ClusterState, NodeRole};
+use crate::state::{ClusterState, NodeRole, SlotState};
 use bytes::Bytes;
 use std::fs;
 use std::sync::Arc;
@@ -51,7 +51,7 @@ impl ClusterRouter {
 
         let slot = key_hash_slot(key);
 
-        // Check if this slot is being imported (ASK redirect)
+        // Check if this slot is being imported — redirect to source with ASK
         if let Some(source_id) = self.state.is_importing(slot) {
             if let Some(source_node) = self.state.nodes.get(&source_id) {
                 return RouteAction::Asking {
@@ -60,6 +60,10 @@ impl ClusterRouter {
                 };
             }
         }
+
+        // Check if this slot is being migrated — if key not found elsewhere,
+        // the source responds with ASK redirect to the target
+        // (We handle this at the response layer; here we just check ownership)
 
         // Check slot ownership
         match self.state.slot_owner(slot) {
@@ -81,6 +85,20 @@ impl ClusterRouter {
             }
             None => RouteAction::Local,
         }
+    }
+
+    /// Generate an ASK redirect for a migrating slot.
+    /// Called when a key is not found locally but the slot is being migrated.
+    pub fn ask_redirect(&self, slot: u16) -> Option<RouteAction> {
+        if let Some(target_id) = self.state.is_migrating(slot) {
+            if let Some(target_node) = self.state.nodes.get(&target_id) {
+                return Some(RouteAction::Asking {
+                    slot,
+                    addr: target_node.addr.clone(),
+                });
+            }
+        }
+        None
     }
 }
 
@@ -244,8 +262,33 @@ impl ClusterCommandHandler {
             Ok(c) => c,
             Err(_) => return "-ERR invalid count\r\n".to_string(),
         };
-        // In a real implementation, scan the keyspace for keys in this slot
+        // In a real implementation, scan the keyspace for keys in this slot.
+        // The store-based implementation is in the server's command handler.
+        // This handler is used in tests where there is no store.
         "*0\r\n".to_string()
+    }
+
+    /// Get keys in a slot from a provided key list (used by the server which has store access).
+    pub fn get_keys_in_slot(keys: &[Bytes], slot: u16, count: usize) -> Vec<Bytes> {
+        let mut result = Vec::new();
+        for key in keys {
+            if key_hash_slot(key) == slot {
+                result.push(key.clone());
+                if result.len() >= count {
+                    break;
+                }
+            }
+        }
+        result
+    }
+
+    /// Serialize a key's value for MIGRATE.
+    /// Returns the raw value bytes for string keys, or an error.
+    pub fn serialize_key_value(_key: &[u8]) -> Result<Vec<u8>, String> {
+        // Full RDB serialization would require store access.
+        // The server-side MIGRATE handler uses the store directly.
+        // This is a placeholder for the cluster-crate level test utility.
+        Err("MIGRATE requires store access — use server-level handler".into())
     }
 
     fn cluster_countkeysinslot(&self, args: &[Bytes]) -> String {
@@ -326,7 +369,9 @@ impl ClusterCommandHandler {
                 }
                 let source_id = String::from_utf8_lossy(&args[2]).to_string();
                 let mut importing = self.state.importing.write().unwrap();
-                importing.insert(slot, source_id);
+                importing.insert(slot, source_id.clone());
+                let mut slot_states = self.state.slot_states.write().unwrap();
+                slot_states[slot as usize] = SlotState::Importing { source: source_id };
             }
             "MIGRATING" => {
                 if args.len() < 3 {
@@ -334,13 +379,19 @@ impl ClusterCommandHandler {
                 }
                 let target_id = String::from_utf8_lossy(&args[2]).to_string();
                 let mut migrating = self.state.migrating.write().unwrap();
-                migrating.insert(slot, target_id);
+                migrating.insert(slot, target_id.clone());
+                let mut slot_states = self.state.slot_states.write().unwrap();
+                slot_states[slot as usize] = SlotState::Migrating { target: target_id };
             }
             "STABLE" => {
                 let mut importing = self.state.importing.write().unwrap();
                 importing.remove(&slot);
                 let mut migrating = self.state.migrating.write().unwrap();
                 migrating.remove(&slot);
+                let mut slot_states = self.state.slot_states.write().unwrap();
+                if (slot as usize) < slot_states.len() {
+                    slot_states[slot as usize] = SlotState::Normal;
+                }
             }
             "NODE" => {
                 if args.len() < 3 {
@@ -355,6 +406,10 @@ impl ClusterCommandHandler {
                 importing.remove(&slot);
                 let mut migrating = self.state.migrating.write().unwrap();
                 migrating.remove(&slot);
+                let mut slot_states = self.state.slot_states.write().unwrap();
+                if (slot as usize) < slot_states.len() {
+                    slot_states[slot as usize] = SlotState::Normal;
+                }
             }
             _ => {
                 return format!("-ERR Unknown SETSLOT subcommand '{}'\r\n", subcmd);

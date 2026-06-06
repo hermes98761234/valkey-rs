@@ -33,11 +33,15 @@ use valkey_proto::RespValue;
 use valkey_storage::Store;
 
 pub mod acl;
+pub mod asking;
+pub mod cluster;
 pub mod hash;
 pub mod keys;
 pub mod list;
+pub mod migrate;
 pub mod pubsub;
 pub mod replication;
+pub mod scripting;
 pub mod server;
 pub mod set;
 pub mod string;
@@ -118,19 +122,29 @@ pub async fn dispatch_ctx(cmd: Vec<Bytes>, store: Db, ctx: &CommandCtx) -> RespV
         | "SETNX" | "SETEX" | "PSETEX" | "GETEX" | "GETDEL" => string::handle(&cmd, &store).await,
         "EXISTS" | "TYPE" | "RENAME" | "RENAMENX" | "EXPIRE" | "PEXPIRE" | "EXPIREAT"
         | "PEXPIREAT" | "TTL" | "PTTL" | "PERSIST" | "KEYS" | "SCAN" | "RANDOMKEY" | "MOVE"
-        | "COPY" | "DUMP" | "RESTORE" | "SORT" | "UNLINK" => keys::handle(&cmd, &store).await,
+        | "COPY" | "DUMP" | "RESTORE" | "SORT" | "SORT_RO" | "SUBSTR" | "EXPIRETIME"
+        | "PEXPIRETIME" | "UNLINK" => keys::handle(&cmd, &store).await,
         "WAIT" => replication::cmd_wait(&cmd[1..]).await,
         "LPUSH" | "RPUSH" | "LPOP" | "RPOP" | "LRANGE" | "LLEN" | "LINDEX" | "LSET" | "LINSERT"
-        | "LREM" | "LTRIM" | "LMOVE" | "BLPOP" | "BRPOP" => list::handle(&cmd, &store).await,
+        | "LREM" | "LTRIM" | "LMOVE" | "BLPOP" | "BRPOP" | "LMPOP" | "BLMPOP" | "BLMOVE"
+        | "LPOS" => list::handle(&cmd, &store).await,
         "HSET" | "HGET" | "HMGET" | "HMSET" | "HGETALL" | "HDEL" | "HEXISTS" | "HLEN" | "HKEYS"
         | "HVALS" | "HINCRBY" | "HINCRBYFLOAT" | "HSCAN" | "HRANDFIELD" => hash::handle(&cmd),
         "SADD" | "SMEMBERS" | "SISMEMBER" | "SMISMEMBER" | "SCARD" | "SREM" | "SPOP"
         | "SRANDMEMBER" | "SMOVE" | "SUNION" | "SINTER" | "SDIFF" | "SUNIONSTORE"
-        | "SINTERSTORE" | "SDIFFSTORE" | "SSCAN" => set::handle(&cmd, &store),
+        | "SINTERSTORE" | "SINTERCARD" | "SDIFFSTORE" | "SSCAN" => set::handle(&cmd, &store),
         "SUBSCRIBE" | "UNSUBSCRIBE" | "PSUBSCRIBE" | "PUNSUBSCRIBE" | "PUBLISH" | "PUBSUB"
-        | "SSUBSCRIBE" | "SUNSUBSCRIBE" => {
+        | "SSUBSCRIBE" | "SUNSUBSCRIBE" | "SPUBLISH" => {
             return RespValue::Error("ERR PubSub commands must be handled in pub/sub mode".into());
         }
+        "EVAL" => scripting::handle_eval_cmd(args, &store).await,
+        "EVALSHA" => scripting::handle_evalsha_cmd(args, &store).await,
+        "EVALRO" => scripting::handle_evalro_cmd(args, &store).await,
+        "EVALSHARO" => scripting::handle_evalsharo_cmd(args, &store).await,
+        "SCRIPT" => scripting::handle_script_cmd(args, &store).await,
+        "FCALL" => scripting::handle_fcall_cmd(args, &store).await,
+        "FCALL_RO" => scripting::handle_fcall_ro_cmd(args, &store).await,
+        "FUNCTION" => scripting::handle_function_cmd(args, &store).await,
         "MULTI" | "EXEC" | "DISCARD" | "WATCH" | "UNWATCH" => {
             transaction::handle(&cmd, &store, ctx.client.clone())
                 .await
@@ -138,6 +152,12 @@ pub async fn dispatch_ctx(cmd: Vec<Bytes>, store: Db, ctx: &CommandCtx) -> RespV
         }
         "ACL" => acl::handle(args, ctx.client.clone()).await,
         "AUTH" => acl::cmd_auth(args, ctx.client.clone()).await,
+        "CLUSTER" => cluster::handle(args).await,
+        "MIGRATE" => migrate::handle(args, &store).await,
+        "ASKING" => asking::handle(args).await,
+        "BZPOPMIN" => zset::bzpopmin(&store, args).await,
+        "BZPOPMAX" => zset::bzpopmax(&store, args).await,
+        "BZMPOP" => zset::bzmpop(&store, args).await,
         _ => {
             let r = match name.as_str() {
                 "ZADD" => zset::zadd(&store, args),
@@ -166,6 +186,10 @@ pub async fn dispatch_ctx(cmd: Vec<Bytes>, store: Db, ctx: &CommandCtx) -> RespV
                 "ZSCAN" => zset::zscan(&store, args),
                 "ZRANDMEMBER" => zset::zrandmember(&store, args),
                 "ZRANGESTORE" => zset::zrangestore(&store, args),
+                "ZDIFF" => zset::zdiff(&store, args),
+                "ZINTER" => zset::zinter(&store, args),
+                "ZUNION" => zset::zunion(&store, args),
+                "ZMPOP" => zset::zmpop(&store, args),
                 "PSYNC" => Ok(replication::cmd_psync(&cmd[1..], &store).await),
                 _ => return RespValue::Error(format!("ERR unknown command `{}`", name).into()),
             };

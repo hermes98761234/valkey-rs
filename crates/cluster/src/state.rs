@@ -5,6 +5,63 @@ use std::sync::{Arc, RwLock};
 /// Number of hash slots in Redis Cluster.
 pub const NUM_SLOTS: usize = 16384;
 
+/// The migration state of a single hash slot.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SlotState {
+    /// Slot is owned by a node and operating normally.
+    Normal,
+    /// Slot is being migrated to the given target node_id.
+    Migrating { target: String },
+    /// Slot is being imported from the given source node_id.
+    Importing { source: String },
+}
+
+impl SlotState {
+    /// Returns true if the slot is in the Migrating state.
+    pub fn is_migrating(&self) -> bool {
+        matches!(self, SlotState::Migrating { .. })
+    }
+
+    /// Returns true if the slot is in the Importing state.
+    pub fn is_importing(&self) -> bool {
+        matches!(self, SlotState::Importing { .. })
+    }
+
+    /// Returns the target node_id if Migrating, None otherwise.
+    pub fn migrating_target(&self) -> Option<&str> {
+        match self {
+            SlotState::Migrating { target } => Some(target),
+            _ => None,
+        }
+    }
+
+    /// Returns the source node_id if Importing, None otherwise.
+    pub fn importing_source(&self) -> Option<&str> {
+        match self {
+            SlotState::Importing { source } => Some(source),
+            _ => None,
+        }
+    }
+
+    /// Validate a state transition. Returns Ok(()) if valid.
+    pub fn transition(&self, new: &SlotState) -> Result<(), String> {
+        match (self, new) {
+            // Normal can transition to anything
+            (SlotState::Normal, _) => Ok(()),
+            // Migrating can go to Normal (cancel via STABLE), or stay Migrating
+            (SlotState::Migrating { .. }, SlotState::Normal) => Ok(()),
+            (SlotState::Migrating { .. }, SlotState::Migrating { .. }) => Ok(()),
+            // Importing can go to Normal (cancel via STABLE), or stay Importing
+            (SlotState::Importing { .. }, SlotState::Normal) => Ok(()),
+            (SlotState::Importing { .. }, SlotState::Importing { .. }) => Ok(()),
+            _ => Err(format!(
+                "invalid slot state transition from {:?} to {:?}",
+                self, new
+            )),
+        }
+    }
+}
+
 /// Role of a node in the cluster.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NodeRole {
@@ -156,9 +213,11 @@ pub struct ClusterState {
     pub nodes: DashMap<String, NodeInfo>,
     /// Slot-to-node mapping: slots[slot] = Some(node_id).
     pub slots: RwLock<Vec<Option<String>>>,
-    /// Slots being migrated: slot -> target node_id.
+    /// Per-slot migration state: slot -> SlotState.
+    pub slot_states: RwLock<Vec<SlotState>>,
+    /// Slots being migrated: slot -> target node_id. (Legacy, kept for backward compat)
     pub migrating: RwLock<HashMap<u16, String>>,
-    /// Slots being imported: slot -> source node_id.
+    /// Slots being imported: slot -> source node_id. (Legacy, kept for backward compat)
     pub importing: RwLock<HashMap<u16, String>>,
     /// Current config epoch.
     pub current_epoch: RwLock<u64>,
@@ -169,6 +228,9 @@ impl ClusterState {
         let mut slots_vec = Vec::with_capacity(NUM_SLOTS);
         slots_vec.resize_with(NUM_SLOTS, || None);
 
+        let slot_states_vec: Vec<SlotState> =
+            (0..NUM_SLOTS).map(|_| SlotState::Normal).collect();
+
         let myself_id = myself.id.clone();
         let nodes = DashMap::new();
         nodes.insert(myself_id, myself.clone());
@@ -177,6 +239,7 @@ impl ClusterState {
             myself: RwLock::new(myself),
             nodes,
             slots: RwLock::new(slots_vec),
+            slot_states: RwLock::new(slot_states_vec),
             migrating: RwLock::new(HashMap::new()),
             importing: RwLock::new(HashMap::new()),
             current_epoch: RwLock::new(0),
@@ -202,6 +265,27 @@ impl ClusterState {
     pub fn is_importing(&self, slot: u16) -> Option<String> {
         let importing = self.importing.read().unwrap();
         importing.get(&slot).cloned()
+    }
+
+    /// Get the SlotState for a given slot.
+    pub fn slot_state(&self, slot: u16) -> Option<SlotState> {
+        if slot as usize >= NUM_SLOTS {
+            return None;
+        }
+        let states = self.slot_states.read().unwrap();
+        Some(states[slot as usize].clone())
+    }
+
+    /// Set the SlotState for a given slot, validating the transition.
+    pub fn set_slot_state(&self, slot: u16, new_state: SlotState) -> Result<(), String> {
+        if slot as usize >= NUM_SLOTS {
+            return Err(format!("slot {} out of range", slot));
+        }
+        let mut states = self.slot_states.write().unwrap();
+        let current = &states[slot as usize];
+        current.transition(&new_state)?;
+        states[slot as usize] = new_state;
+        Ok(())
     }
 
     /// Assign a range of slots to a node.
@@ -397,5 +481,124 @@ mod tests {
         let info = state.cluster_info();
         assert!(info.contains("cluster_state:"));
         assert!(info.contains("cluster_known_nodes:1"));
+    }
+
+    #[test]
+    fn slot_state_default_is_normal() {
+        let node = NodeInfo::new(
+            generate_node_id(),
+            "127.0.0.1:6379".into(),
+            NodeRole::Master,
+        );
+        let state = ClusterState::new(node);
+        assert_eq!(state.slot_state(0), Some(SlotState::Normal));
+        assert_eq!(state.slot_state(16383), Some(SlotState::Normal));
+    }
+
+    #[test]
+    fn slot_state_migrating_transition() {
+        let node = NodeInfo::new(
+            generate_node_id(),
+            "127.0.0.1:6379".into(),
+            NodeRole::Master,
+        );
+        let state = ClusterState::new(node);
+        // Normal -> Migrating is valid
+        assert!(state
+            .set_slot_state(0, SlotState::Migrating { target: "node_b".into() })
+            .is_ok());
+        assert_eq!(
+            state.slot_state(0),
+            Some(SlotState::Migrating { target: "node_b".into() })
+        );
+        assert!(state.slot_state(0).unwrap().is_migrating());
+        assert_eq!(
+            state.slot_state(0).unwrap().migrating_target(),
+            Some("node_b")
+        );
+    }
+
+    #[test]
+    fn slot_state_importing_transition() {
+        let node = NodeInfo::new(
+            generate_node_id(),
+            "127.0.0.1:6379".into(),
+            NodeRole::Master,
+        );
+        let state = ClusterState::new(node);
+        // Normal -> Importing is valid
+        assert!(state
+            .set_slot_state(0, SlotState::Importing { source: "node_a".into() })
+            .is_ok());
+        assert_eq!(
+            state.slot_state(0),
+            Some(SlotState::Importing { source: "node_a".into() })
+        );
+        assert!(state.slot_state(0).unwrap().is_importing());
+        assert_eq!(
+            state.slot_state(0).unwrap().importing_source(),
+            Some("node_a")
+        );
+    }
+
+    #[test]
+    fn slot_state_migrating_to_stable() {
+        let node = NodeInfo::new(
+            generate_node_id(),
+            "127.0.0.1:6379".into(),
+            NodeRole::Master,
+        );
+        let state = ClusterState::new(node);
+        // Set migrating
+        state
+            .set_slot_state(0, SlotState::Migrating { target: "node_b".into() })
+            .unwrap();
+        // Migrating -> Normal (STABLE) is valid
+        assert!(state.set_slot_state(0, SlotState::Normal).is_ok());
+        assert_eq!(state.slot_state(0), Some(SlotState::Normal));
+    }
+
+    #[test]
+    fn slot_state_out_of_range() {
+        let node = NodeInfo::new(
+            generate_node_id(),
+            "127.0.0.1:6379".into(),
+            NodeRole::Master,
+        );
+        let state = ClusterState::new(node);
+        assert!(state.slot_state(16384).is_none());
+        assert!(state
+            .set_slot_state(16384, SlotState::Migrating { target: "x".into() })
+            .is_err());
+    }
+
+    #[test]
+    fn slot_state_transition_validation() {
+        // Normal -> anything = ok
+        assert!(SlotState::Normal.transition(&SlotState::Migrating { target: "x".into() })
+            .is_ok());
+        assert!(SlotState::Normal.transition(&SlotState::Importing { source: "x".into() })
+            .is_ok());
+        assert!(SlotState::Normal.transition(&SlotState::Normal).is_ok());
+
+        // Migrating -> Normal = ok (cancel)
+        assert!(SlotState::Migrating { target: "x".into() }
+            .transition(&SlotState::Normal)
+            .is_ok());
+
+        // Importing -> Normal = ok (cancel)
+        assert!(SlotState::Importing { source: "x".into() }
+            .transition(&SlotState::Normal)
+            .is_ok());
+
+        // Migrating -> Importing = err (invalid)
+        assert!(SlotState::Migrating { target: "x".into() }
+            .transition(&SlotState::Importing { source: "y".into() })
+            .is_err());
+
+        // Importing -> Migrating = err (invalid)
+        assert!(SlotState::Importing { source: "x".into() }
+            .transition(&SlotState::Migrating { target: "y".into() })
+            .is_err());
     }
 }

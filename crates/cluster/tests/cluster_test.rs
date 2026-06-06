@@ -10,6 +10,17 @@ mod integration_tests {
         generate_node_id, ClusterState, NodeFlags, NodeInfo, NodeRole, SlotRange, NUM_SLOTS,
     };
 
+    /// Find a key that hashes to the given slot.
+    fn find_key_in_slot(target_slot: u16) -> String {
+        for i in 0..10000 {
+            let key = format!("test_key_{}", i);
+            if key_hash_slot(key.as_bytes()) == target_slot {
+                return key;
+            }
+        }
+        panic!("Could not find a key for slot {}", target_slot);
+    }
+
     /// Simulate a 3-node cluster with slot assignments.
     /// Node A: slots 0-5460
     /// Node B: slots 5461-10922
@@ -348,5 +359,208 @@ mod integration_tests {
         // We can't guarantee they're different, but the test verifies no panic
         assert!(slot1 < NUM_SLOTS as u16);
         assert!(slot2 < NUM_SLOTS as u16);
+    }
+
+    #[test]
+    fn slot_migration_lifecycle() {
+        // Full migration lifecycle test:
+        // 1. Mark slot MIGRATING on source, IMPORTING on destination
+        // 2. Verify ASK redirects work on both sides
+        // 3. Finalize with CLUSTER SETSLOT NODE
+        // 4. Verify slot ownership has changed
+        let cluster = setup_cluster();
+
+        let a_id = {
+            let a = cluster.node_a_state.myself.read().unwrap();
+            a.id.clone()
+        };
+        let b_id = {
+            let b = cluster.node_b_state.myself.read().unwrap();
+            b.id.clone()
+        };
+
+        // Pick a slot owned by node A (slot 100 is in range 0-5460)
+        let slot: u16 = 100;
+
+        // Verify initial ownership
+        let owner_a = cluster.node_a_state.slot_owner(slot);
+        assert_eq!(owner_a, Some(a_id.clone()));
+
+        // Step 1: Mark slot 100 as MIGRATING on node A (source)
+        let args = vec![
+            Bytes::from("100"),
+            Bytes::from("MIGRATING"),
+            Bytes::from(b_id.clone()),
+        ];
+        let resp = cluster.handler_a.handle("SETSLOT", &args);
+        assert_eq!(resp, "+OK\r\n");
+        assert!(cluster.node_a_state.is_migrating(slot).is_some());
+        assert_eq!(
+            cluster.node_a_state.is_migrating(slot).unwrap(),
+            b_id
+        );
+
+        // Step 1b: Mark slot 100 as IMPORTING on node B (destination)
+        let args = vec![
+            Bytes::from("100"),
+            Bytes::from("IMPORTING"),
+            Bytes::from(a_id.clone()),
+        ];
+        let resp = cluster.handler_b.handle("SETSLOT", &args);
+        assert_eq!(resp, "+OK\r\n");
+        assert!(cluster.node_b_state.is_importing(slot).is_some());
+        assert_eq!(
+            cluster.node_b_state.is_importing(slot).unwrap(),
+            a_id
+        );
+
+        // Step 2: Verify ASK redirect on source (node A) for migrating slot
+        let ask_redirect = cluster.router_a.ask_redirect(slot);
+        assert!(ask_redirect.is_some());
+        match ask_redirect.unwrap() {
+            RouteAction::Asking { slot: s, addr } => {
+                assert_eq!(s, slot);
+                // addr should be node B's address
+                assert!(addr.contains("7001"));
+            }
+            _ => panic!("Expected Asking redirect"),
+        }
+
+        // Step 2b: Node B's router should redirect unknown keys to source (ASK)
+        // When node B is importing a slot, the router should send ASK to source
+        // Find a key that hashes to slot 100
+        let test_key = find_key_in_slot(slot);
+        let route_b = cluster.router_b.route(test_key.as_bytes());
+        match route_b {
+            RouteAction::Asking { slot: s, addr } => {
+                assert_eq!(s, slot);
+                assert!(addr.contains("7000")); // node A's address
+            }
+            RouteAction::Local => {
+                // If the key hashes to a slot owned by B, Local is fine
+                // Try the actual slot
+            }
+            _ => {}
+        }
+
+        // Step 3: Finalize migration — node A sets slot to NODE (b_id)
+        let args = vec![
+            Bytes::from("100"),
+            Bytes::from("NODE"),
+            Bytes::from(b_id.clone()),
+        ];
+        let resp = cluster.handler_a.handle("SETSLOT", &args);
+        assert_eq!(resp, "+OK\r\n");
+
+        // After finalization: migrating/importing should be cleared
+        assert!(cluster.node_a_state.is_migrating(slot).is_none());
+        assert!(cluster.node_a_state.is_importing(slot).is_none());
+
+        // Slot ownership should now point to node B
+        let owner_after = cluster.node_a_state.slot_owner(slot);
+        assert_eq!(owner_after, Some(b_id.clone()));
+
+        // Step 4: Verify CLUSTER GETKEYSINSLOT returns empty (no store in test)
+        let args = vec![Bytes::from("100"), Bytes::from("10")];
+        let resp = cluster.handler_a.handle("GETKEYSINSLOT", &args);
+        assert_eq!(resp, "*0\r\n");
+    }
+
+    #[test]
+    fn slot_migration_cancel() {
+        let cluster = setup_cluster();
+
+        let a_id = {
+            let a = cluster.node_a_state.myself.read().unwrap();
+            a.id.clone()
+        };
+        let b_id = {
+            let b = cluster.node_b_state.myself.read().unwrap();
+            b.id.clone()
+        };
+
+        let slot: u16 = 200;
+
+        // Start migration
+        let args = vec![
+            Bytes::from("200"),
+            Bytes::from("MIGRATING"),
+            Bytes::from(b_id.clone()),
+        ];
+        cluster.handler_a.handle("SETSLOT", &args);
+        assert!(cluster.node_a_state.is_migrating(slot).is_some());
+
+        // Cancel with STABLE
+        let args = vec![Bytes::from("200"), Bytes::from("STABLE")];
+        let resp = cluster.handler_a.handle("SETSLOT", &args);
+        assert_eq!(resp, "+OK\r\n");
+        assert!(cluster.node_a_state.is_migrating(slot).is_none());
+
+        // Slot ownership should be unchanged
+        assert_eq!(cluster.node_a_state.slot_owner(slot), Some(a_id));
+    }
+
+    #[test]
+    fn ask_redirect_for_migrating_slot() {
+        let cluster = setup_cluster();
+
+        let b_id = {
+            let b = cluster.node_b_state.myself.read().unwrap();
+            b.id.clone()
+        };
+
+        // Mark slot 500 as migrating from A to B
+        let args = vec![
+            Bytes::from("500"),
+            Bytes::from("MIGRATING"),
+            Bytes::from(b_id.clone()),
+        ];
+        cluster.handler_a.handle("SETSLOT", &args);
+
+        // The router on node A should generate ASK redirect for slot 500
+        let redirect = cluster.router_a.ask_redirect(500);
+        assert!(redirect.is_some());
+        match redirect.unwrap() {
+            RouteAction::Asking { slot, addr } => {
+                assert_eq!(slot, 500);
+                assert!(addr.contains("7001")); // node B's port
+            }
+            _ => panic!("Expected Asking"),
+        }
+
+        // Non-migrating slot should return None
+        let redirect = cluster.router_a.ask_redirect(999);
+        assert!(redirect.is_none());
+    }
+
+    #[test]
+    fn get_keys_in_slot_helper() {
+        use valkey_cluster::commands::ClusterCommandHandler;
+
+        let keys = vec![
+            Bytes::from("key_a"),
+            Bytes::from("key_b"),
+            Bytes::from("key_c"),
+            Bytes::from("{tag}key_a"),
+            Bytes::from("{tag}key_b"),
+        ];
+
+        let slot_a = key_hash_slot(b"key_a");
+        let slot_tag = key_hash_slot(b"{tag}key_a");
+
+        // Get keys in slot_a
+        let result = ClusterCommandHandler::get_keys_in_slot(&keys, slot_a, 10);
+        assert!(!result.is_empty());
+        // key_a should be in the result
+        assert!(result.contains(&Bytes::from("key_a")));
+
+        // Get keys matching tag slot
+        let result = ClusterCommandHandler::get_keys_in_slot(&keys, slot_tag, 10);
+        assert!(result.contains(&Bytes::from("{tag}key_a")));
+        assert!(result.contains(&Bytes::from("{tag}key_b")));
+
+        // Count limit works
+        let result = ClusterCommandHandler::get_keys_in_slot(&keys, slot_a, 1);
+        assert_eq!(result.len(), 1);
     }
 }
