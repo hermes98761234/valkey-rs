@@ -591,7 +591,8 @@ async fn cmd_restore(args: &[Bytes], store: &Arc<Store>) -> RespValue {
         return RespValue::Error("ERR DUMP payload version or checksum are wrong".into());
     }
     let type_byte = data_part[0];
-    let data_len = u32::from_le_bytes([data_part[1], data_part[2], data_part[3], data_part[4]]) as usize;
+    let data_len =
+        u32::from_le_bytes([data_part[1], data_part[2], data_part[3], data_part[4]]) as usize;
     if 5 + data_len + 8 > data_part.len() {
         return RespValue::Error("ERR DUMP payload version or checksum are wrong".into());
     }
@@ -979,7 +980,11 @@ async fn cmd_substr(args: &[Bytes], store: &Arc<Store>) -> RespValue {
     fn normalize_index(index: i64, len: i64) -> i64 {
         if index < 0 {
             let idx = len + index;
-            if idx < 0 { 0 } else { idx }
+            if idx < 0 {
+                0
+            } else {
+                idx
+            }
         } else {
             index
         }
@@ -1241,7 +1246,11 @@ mod tests {
             RespValue::BulkString(Some(Bytes::from("Hello")))
         );
         assert_eq!(
-            cmd_substr(&[Bytes::from("k"), Bytes::from("-5"), Bytes::from("-1")], &s).await,
+            cmd_substr(
+                &[Bytes::from("k"), Bytes::from("-5"), Bytes::from("-1")],
+                &s
+            )
+            .await,
             RespValue::BulkString(Some(Bytes::from("World")))
         );
     }
@@ -1259,11 +1268,7 @@ mod tests {
         };
         assert!(dumped.len() > 0);
         // Restore to a new key with 0 TTL (keeps original TTL)
-        let result = cmd_restore(
-            &[Bytes::from("dst"), Bytes::from("0"), dumped],
-            &s,
-        )
-        .await;
+        let result = cmd_restore(&[Bytes::from("dst"), Bytes::from("0"), dumped], &s).await;
         assert_eq!(result, RespValue::ok());
         let val = s.get(&Bytes::from("dst")).unwrap();
         match &val.data {
@@ -1282,11 +1287,7 @@ mod tests {
             RespValue::BulkString(Some(b)) => b,
             _ => panic!("expected bulk string from DUMP"),
         };
-        let result = cmd_restore(
-            &[Bytes::from("mylist2"), Bytes::from("0"), dumped],
-            &s,
-        )
-        .await;
+        let result = cmd_restore(&[Bytes::from("mylist2"), Bytes::from("0"), dumped], &s).await;
         assert_eq!(result, RespValue::ok());
         let val = s.get(&Bytes::from("mylist2")).unwrap();
         match &val.data {

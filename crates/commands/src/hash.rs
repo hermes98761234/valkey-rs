@@ -5,9 +5,7 @@ use valkey_proto::RespValue;
 use valkey_storage::{DataType, Entry, Store};
 
 fn wrongtype() -> RespValue {
-    RespValue::Error(
-        "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
-    )
+    RespValue::Error("WRONGTYPE Operation against a key holding the wrong kind of value".into())
 }
 
 pub fn handle(cmd: &[Bytes], store: &Arc<Store>) -> RespValue {
@@ -22,9 +20,7 @@ pub fn handle(cmd: &[Bytes], store: &Arc<Store>) -> RespValue {
     match name.as_str() {
         "HSET" => {
             if args.len() < 3 || (args.len() - 1) % 2 != 0 {
-                return RespValue::Error(
-                    "ERR wrong number of arguments for 'hset' command".into(),
-                );
+                return RespValue::Error("ERR wrong number of arguments for 'hset' command".into());
             }
             let mut e = store
                 .keyspace
@@ -47,9 +43,7 @@ pub fn handle(cmd: &[Bytes], store: &Arc<Store>) -> RespValue {
         }
         "HGET" => {
             if args.len() < 2 {
-                return RespValue::Error(
-                    "ERR wrong number of arguments for 'hget' command".into(),
-                );
+                return RespValue::Error("ERR wrong number of arguments for 'hget' command".into());
             }
             match store.get(&args[0]) {
                 Some(entry) => match &entry.data {
@@ -82,9 +76,7 @@ pub fn handle(cmd: &[Bytes], store: &Arc<Store>) -> RespValue {
                     ),
                     _ => wrongtype(),
                 },
-                None => RespValue::array(
-                    fields.iter().map(|_| RespValue::null_bulk()).collect(),
-                ),
+                None => RespValue::array(fields.iter().map(|_| RespValue::null_bulk()).collect()),
             }
         }
         "HMSET" => {
@@ -108,27 +100,23 @@ pub fn handle(cmd: &[Bytes], store: &Arc<Store>) -> RespValue {
             }
             RespValue::ok()
         }
-        "HGETALL" => {
-            match store.get(&args[0]) {
-                Some(entry) => match &entry.data {
-                    DataType::Hash(h) => {
-                        let mut r = Vec::with_capacity(h.len() * 2);
-                        for (k, v) in h.iter() {
-                            r.push(RespValue::bulk(k.clone()));
-                            r.push(RespValue::bulk(v.clone()));
-                        }
-                        RespValue::array(r)
+        "HGETALL" => match store.get(&args[0]) {
+            Some(entry) => match &entry.data {
+                DataType::Hash(h) => {
+                    let mut r = Vec::with_capacity(h.len() * 2);
+                    for (k, v) in h.iter() {
+                        r.push(RespValue::bulk(k.clone()));
+                        r.push(RespValue::bulk(v.clone()));
                     }
-                    _ => wrongtype(),
-                },
-                None => RespValue::array(Vec::new()),
-            }
-        }
+                    RespValue::array(r)
+                }
+                _ => wrongtype(),
+            },
+            None => RespValue::array(Vec::new()),
+        },
         "HDEL" => {
             if args.len() < 2 {
-                return RespValue::Error(
-                    "ERR wrong number of arguments for 'hdel' command".into(),
-                );
+                return RespValue::Error("ERR wrong number of arguments for 'hdel' command".into());
             }
             match store.keyspace.get_mut(&args[0]) {
                 Some(mut entry) => match &mut entry.data {
@@ -171,18 +159,18 @@ pub fn handle(cmd: &[Bytes], store: &Arc<Store>) -> RespValue {
         },
         "HKEYS" => match store.get(&args[0]) {
             Some(entry) => match &entry.data {
-                DataType::Hash(h) => RespValue::array(
-                    h.keys().map(|k| RespValue::bulk(k.clone())).collect(),
-                ),
+                DataType::Hash(h) => {
+                    RespValue::array(h.keys().map(|k| RespValue::bulk(k.clone())).collect())
+                }
                 _ => wrongtype(),
             },
             None => RespValue::array(Vec::new()),
         },
         "HVALS" => match store.get(&args[0]) {
             Some(entry) => match &entry.data {
-                DataType::Hash(h) => RespValue::array(
-                    h.values().map(|v| RespValue::bulk(v.clone())).collect(),
-                ),
+                DataType::Hash(h) => {
+                    RespValue::array(h.values().map(|v| RespValue::bulk(v.clone())).collect())
+                }
                 _ => wrongtype(),
             },
             None => RespValue::array(Vec::new()),
@@ -193,12 +181,13 @@ pub fn handle(cmd: &[Bytes], store: &Arc<Store>) -> RespValue {
                     "ERR wrong number of arguments for 'hincrby' command".into(),
                 );
             }
-            let incr = match std::str::from_utf8(&args[2]).ok().and_then(|s| s.parse::<i64>().ok()) {
+            let incr = match std::str::from_utf8(&args[2])
+                .ok()
+                .and_then(|s| s.parse::<i64>().ok())
+            {
                 Some(n) => n,
                 None => {
-                    return RespValue::Error(
-                        "ERR value is not an integer or out of range".into(),
-                    )
+                    return RespValue::Error("ERR value is not an integer or out of range".into())
                 }
             };
             let mut e = store
@@ -224,7 +213,10 @@ pub fn handle(cmd: &[Bytes], store: &Arc<Store>) -> RespValue {
                     "ERR wrong number of arguments for 'hincrbyfloat' command".into(),
                 );
             }
-            let incr = match std::str::from_utf8(&args[2]).ok().and_then(|s| s.parse::<f64>().ok()) {
+            let incr = match std::str::from_utf8(&args[2])
+                .ok()
+                .and_then(|s| s.parse::<f64>().ok())
+            {
                 Some(n) => n,
                 None => {
                     return RespValue::Error(
@@ -262,27 +254,41 @@ pub fn handle(cmd: &[Bytes], store: &Arc<Store>) -> RespValue {
             let mut count = 10usize;
             let mut i = 1;
             while i < args.len() {
-                let tok = std::str::from_utf8(&args[i]).unwrap_or("").to_ascii_uppercase();
+                let tok = std::str::from_utf8(&args[i])
+                    .unwrap_or("")
+                    .to_ascii_uppercase();
                 match tok.as_str() {
                     "MATCH" => {
                         if i + 1 >= args.len() {
                             return RespValue::Error("ERR syntax error".into());
                         }
-                        pattern = std::str::from_utf8(&args[i + 1]).ok().map(|s| s.to_string());
+                        pattern = std::str::from_utf8(&args[i + 1])
+                            .ok()
+                            .map(|s| s.to_string());
                         i += 2;
                     }
                     "COUNT" => {
                         if i + 1 >= args.len() {
                             return RespValue::Error("ERR syntax error".into());
                         }
-                        count = match std::str::from_utf8(&args[i + 1]).ok().and_then(|s| s.parse().ok()) {
+                        count = match std::str::from_utf8(&args[i + 1])
+                            .ok()
+                            .and_then(|s| s.parse().ok())
+                        {
                             Some(n) => n,
-                            None => return RespValue::Error("ERR value is not an integer or out of range".into()),
+                            None => {
+                                return RespValue::Error(
+                                    "ERR value is not an integer or out of range".into(),
+                                )
+                            }
                         };
                         i += 2;
                     }
                     _ => {
-                        cursor = match std::str::from_utf8(&args[i]).ok().and_then(|s| s.parse().ok()) {
+                        cursor = match std::str::from_utf8(&args[i])
+                            .ok()
+                            .and_then(|s| s.parse().ok())
+                        {
                             Some(n) => n,
                             None => return RespValue::Error("ERR syntax error".into()),
                         };
@@ -345,16 +351,25 @@ pub fn handle(cmd: &[Bytes], store: &Arc<Store>) -> RespValue {
             let mut with_values = false;
             let mut i = 1;
             while i < args.len() {
-                let tok = std::str::from_utf8(&args[i]).unwrap_or("").to_ascii_uppercase();
+                let tok = std::str::from_utf8(&args[i])
+                    .unwrap_or("")
+                    .to_ascii_uppercase();
                 match tok.as_str() {
                     "WITHVALUES" => {
                         with_values = true;
                         i += 1;
                     }
                     _ => {
-                        count = match std::str::from_utf8(&args[i]).ok().and_then(|s| s.parse().ok()) {
+                        count = match std::str::from_utf8(&args[i])
+                            .ok()
+                            .and_then(|s| s.parse().ok())
+                        {
                             Some(n) => n,
-                            None => return RespValue::Error("ERR value is not an integer or out of range".into()),
+                            None => {
+                                return RespValue::Error(
+                                    "ERR value is not an integer or out of range".into(),
+                                )
+                            }
                         };
                         i += 1;
                     }
@@ -457,8 +472,14 @@ mod tests {
     async fn hget_missing() {
         let s = st();
         handle(&cmd(&["HSET", "k", "f", "v"]), &s);
-        assert_eq!(handle(&cmd(&["HGET", "k", "x"]), &s), RespValue::null_bulk());
-        assert_eq!(handle(&cmd(&["HGET", "z", "f"]), &s), RespValue::null_bulk());
+        assert_eq!(
+            handle(&cmd(&["HGET", "k", "x"]), &s),
+            RespValue::null_bulk()
+        );
+        assert_eq!(
+            handle(&cmd(&["HGET", "z", "f"]), &s),
+            RespValue::null_bulk()
+        );
     }
 
     #[tokio::test]
@@ -523,7 +544,10 @@ mod tests {
             handle(&cmd(&["HDEL", "k", "a", "c"]), &s),
             RespValue::int(2)
         );
-        assert_eq!(handle(&cmd(&["HGET", "k", "a"]), &s), RespValue::null_bulk());
+        assert_eq!(
+            handle(&cmd(&["HGET", "k", "a"]), &s),
+            RespValue::null_bulk()
+        );
         assert_eq!(
             handle(&cmd(&["HGET", "k", "b"]), &s),
             RespValue::bulk(b("2"))
@@ -533,39 +557,24 @@ mod tests {
     #[tokio::test]
     async fn hdel_missing() {
         let s = st();
-        assert_eq!(
-            handle(&cmd(&["HDEL", "z", "a"]), &s),
-            RespValue::int(0)
-        );
+        assert_eq!(handle(&cmd(&["HDEL", "z", "a"]), &s), RespValue::int(0));
         handle(&cmd(&["HSET", "k", "a", "1"]), &s);
-        assert_eq!(
-            handle(&cmd(&["HDEL", "k", "z"]), &s),
-            RespValue::int(0)
-        );
+        assert_eq!(handle(&cmd(&["HDEL", "k", "z"]), &s), RespValue::int(0));
     }
 
     #[tokio::test]
     async fn hexists_yes() {
         let s = st();
         handle(&cmd(&["HSET", "k", "a", "1"]), &s);
-        assert_eq!(
-            handle(&cmd(&["HEXISTS", "k", "a"]), &s),
-            RespValue::int(1)
-        );
+        assert_eq!(handle(&cmd(&["HEXISTS", "k", "a"]), &s), RespValue::int(1));
     }
 
     #[tokio::test]
     async fn hexists_no() {
         let s = st();
         handle(&cmd(&["HSET", "k", "a", "1"]), &s);
-        assert_eq!(
-            handle(&cmd(&["HEXISTS", "k", "b"]), &s),
-            RespValue::int(0)
-        );
-        assert_eq!(
-            handle(&cmd(&["HEXISTS", "z", "a"]), &s),
-            RespValue::int(0)
-        );
+        assert_eq!(handle(&cmd(&["HEXISTS", "k", "b"]), &s), RespValue::int(0));
+        assert_eq!(handle(&cmd(&["HEXISTS", "z", "a"]), &s), RespValue::int(0));
     }
 
     #[tokio::test]

@@ -62,25 +62,17 @@ fn cluster_nodes() -> RespValue {
 
 fn cluster_meet(args: &[Bytes]) -> RespValue {
     if args.len() < 2 {
-        return RespValue::Error(
-            "ERR wrong number of arguments for 'CLUSTER MEET' command".into(),
-        );
+        return RespValue::Error("ERR wrong number of arguments for 'CLUSTER MEET' command".into());
     }
-    RespValue::Error(
-        "ERR This instance has cluster support disabled".into(),
-    )
+    RespValue::Error("ERR This instance has cluster support disabled".into())
 }
 
 fn cluster_reset(args: &[Bytes]) -> RespValue {
     let _hard = args
         .first()
-        .map(|a| {
-            String::from_utf8_lossy(a).to_ascii_uppercase() == "HARD"
-        })
+        .map(|a| String::from_utf8_lossy(a).to_ascii_uppercase() == "HARD")
         .unwrap_or(false);
-    RespValue::Error(
-        "ERR This instance has cluster support disabled".into(),
-    )
+    RespValue::Error("ERR This instance has cluster support disabled".into())
 }
 
 fn cluster_keyslot(args: &[Bytes]) -> RespValue {
@@ -127,15 +119,11 @@ fn cluster_countkeysinslot(args: &[Bytes]) -> RespValue {
 }
 
 fn cluster_addslots(_args: &[Bytes]) -> RespValue {
-    RespValue::Error(
-        "ERR This instance has cluster support disabled".into(),
-    )
+    RespValue::Error("ERR This instance has cluster support disabled".into())
 }
 
 fn cluster_delslots(_args: &[Bytes]) -> RespValue {
-    RespValue::Error(
-        "ERR This instance has cluster support disabled".into(),
-    )
+    RespValue::Error("ERR This instance has cluster support disabled".into())
 }
 
 fn cluster_setslot(args: &[Bytes]) -> RespValue {
@@ -144,21 +132,15 @@ fn cluster_setslot(args: &[Bytes]) -> RespValue {
             "ERR wrong number of arguments for 'CLUSTER SETSLOT' command".into(),
         );
     }
-    RespValue::Error(
-        "ERR This instance has cluster support disabled".into(),
-    )
+    RespValue::Error("ERR This instance has cluster support disabled".into())
 }
 
 fn cluster_replicate(_args: &[Bytes]) -> RespValue {
-    RespValue::Error(
-        "ERR This instance has cluster support disabled".into(),
-    )
+    RespValue::Error("ERR This instance has cluster support disabled".into())
 }
 
 fn cluster_failover(_args: &[Bytes]) -> RespValue {
-    RespValue::Error(
-        "ERR This instance has cluster support disabled".into(),
-    )
+    RespValue::Error("ERR This instance has cluster support disabled".into())
 }
 
 fn cluster_bumpepoch() -> RespValue {

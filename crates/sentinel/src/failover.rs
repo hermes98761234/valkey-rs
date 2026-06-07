@@ -72,13 +72,12 @@ async fn reconfigure_replica(replica_addr: SocketAddr, new_primary: SocketAddr) 
             let text = String::from_utf8_lossy(&reply);
             let ok = text.contains("+OK");
             if ok {
-                info!("Reconfigured {} to replicate from {}", replica_addr, new_primary);
-            } else {
-                warn!(
-                    "REPLICAOF reply from {}: {:?}",
-                    replica_addr,
-                    text.trim()
+                info!(
+                    "Reconfigured {} to replicate from {}",
+                    replica_addr, new_primary
                 );
+            } else {
+                warn!("REPLICAOF reply from {}: {:?}", replica_addr, text.trim());
             }
             ok
         }
@@ -92,7 +91,9 @@ async fn reconfigure_replica(replica_addr: SocketAddr, new_primary: SocketAddr) 
 /// Pick the best replica for promotion.
 /// Criteria: lowest priority value, then highest replication offset.
 fn pick_best_replica(replicas: &[crate::state::ReplicaInfo]) -> Option<&crate::state::ReplicaInfo> {
-    replicas.iter().min_by_key(|r| (r.priority, std::cmp::Reverse(r.replication_offset)))
+    replicas
+        .iter()
+        .min_by_key(|r| (r.priority, std::cmp::Reverse(r.replication_offset)))
 }
 
 /// Execute failover for a master that is in ODOWN state.

@@ -2,8 +2,8 @@ use bytes::Bytes;
 use std::sync::Arc;
 use valkey_proto::RespValue;
 use valkey_scripting::{
-    handle_eval, handle_eval_ro, handle_evalsha, handle_evalsha_ro, handle_fcall,
-    handle_fcall_ro, handle_function, handle_script,
+    handle_eval, handle_eval_ro, handle_evalsha, handle_evalsha_ro, handle_fcall, handle_fcall_ro,
+    handle_function, handle_script,
 };
 use valkey_storage::Store;
 

@@ -47,7 +47,7 @@ impl SentinelServer {
 /// Handle a single client connection.
 async fn handle_connection(
     mut stream: TcpStream,
-    peer: SocketAddr,
+    _peer: SocketAddr,
     state: SharedState,
 ) -> anyhow::Result<()> {
     let mut buf = vec![0u8; 4096];
@@ -164,6 +164,7 @@ async fn handle_sentinel(args: &[&str], state: &SharedState) -> RespValue {
 // SENTINEL command implementations
 // ---------------------------------------------------------------------------
 
+#[allow(clippy::vec_init_then_push)]
 async fn sentinel_masters(state: &SharedState) -> RespValue {
     let masters = state.masters.read().await;
     let mut result = Vec::new();
@@ -184,13 +185,17 @@ async fn sentinel_masters(state: &SharedState) -> RespValue {
         fields.push(RespValue::BulkString(None)); // unknown
         fields.push(RespValue::BulkString(Some(Bytes::from("flags"))));
         flags_str(info, &mut fields);
-        fields.push(RespValue::BulkString(Some(Bytes::from("link-pending-commands"))));
+        fields.push(RespValue::BulkString(Some(Bytes::from(
+            "link-pending-commands",
+        ))));
         fields.push(RespValue::Integer(0));
         fields.push(RespValue::BulkString(Some(Bytes::from("link-refcount"))));
         fields.push(RespValue::Integer(0));
         fields.push(RespValue::BulkString(Some(Bytes::from("last-ping-sent"))));
         fields.push(RespValue::Integer(0));
-        fields.push(RespValue::BulkString(Some(Bytes::from("last-ok-ping-reply"))));
+        fields.push(RespValue::BulkString(Some(Bytes::from(
+            "last-ok-ping-reply",
+        ))));
         fields.push(RespValue::Integer(
             info.last_ping_reply.map(|_| 1).unwrap_or(0),
         ));
@@ -198,19 +203,25 @@ async fn sentinel_masters(state: &SharedState) -> RespValue {
         fields.push(RespValue::Integer(
             info.last_ping_reply.map(|_| 1).unwrap_or(0),
         ));
-        fields.push(RespValue::BulkString(Some(Bytes::from("down-after-milliseconds"))));
+        fields.push(RespValue::BulkString(Some(Bytes::from(
+            "down-after-milliseconds",
+        ))));
         fields.push(RespValue::Integer(info.down_after_ms as i64));
         fields.push(RespValue::BulkString(Some(Bytes::from("info-refresh"))));
         fields.push(RespValue::Integer(0));
         fields.push(RespValue::BulkString(Some(Bytes::from("role-reported"))));
         fields.push(RespValue::BulkString(Some(Bytes::from("master"))));
-        fields.push(RespValue::BulkString(Some(Bytes::from("role-reported-time"))));
+        fields.push(RespValue::BulkString(Some(Bytes::from(
+            "role-reported-time",
+        ))));
         fields.push(RespValue::Integer(0));
         fields.push(RespValue::BulkString(Some(Bytes::from("config-epoch"))));
         fields.push(RespValue::Integer(info.failover_epoch as i64));
         fields.push(RespValue::BulkString(Some(Bytes::from("num-slaves"))));
         fields.push(RespValue::Integer(info.replicas.len() as i64));
-        fields.push(RespValue::BulkString(Some(Bytes::from("num-other-sentinels"))));
+        fields.push(RespValue::BulkString(Some(Bytes::from(
+            "num-other-sentinels",
+        ))));
         fields.push(RespValue::Integer(info.sentinels.len() as i64));
         fields.push(RespValue::BulkString(Some(Bytes::from("quorum"))));
         fields.push(RespValue::Integer(info.quorum as i64));
@@ -235,6 +246,7 @@ fn flags_str(info: &crate::state::MasterInfo, fields: &mut Vec<RespValue>) {
     fields.push(RespValue::BulkString(Some(Bytes::from(flags))));
 }
 
+#[allow(clippy::vec_init_then_push)]
 async fn sentinel_master(name: &str, state: &SharedState) -> RespValue {
     let masters = state.masters.read().await;
     let info = match masters.get(name) {
@@ -257,13 +269,17 @@ async fn sentinel_master(name: &str, state: &SharedState) -> RespValue {
     fields.push(RespValue::BulkString(None));
     fields.push(RespValue::BulkString(Some(Bytes::from("flags"))));
     flags_str(info, &mut fields);
-    fields.push(RespValue::BulkString(Some(Bytes::from("link-pending-commands"))));
+    fields.push(RespValue::BulkString(Some(Bytes::from(
+        "link-pending-commands",
+    ))));
     fields.push(RespValue::Integer(0));
     fields.push(RespValue::BulkString(Some(Bytes::from("link-refcount"))));
     fields.push(RespValue::Integer(0));
     fields.push(RespValue::BulkString(Some(Bytes::from("last-ping-sent"))));
     fields.push(RespValue::Integer(0));
-    fields.push(RespValue::BulkString(Some(Bytes::from("last-ok-ping-reply"))));
+    fields.push(RespValue::BulkString(Some(Bytes::from(
+        "last-ok-ping-reply",
+    ))));
     fields.push(RespValue::Integer(
         info.last_ping_reply.map(|_| 1).unwrap_or(0),
     ));
@@ -271,19 +287,25 @@ async fn sentinel_master(name: &str, state: &SharedState) -> RespValue {
     fields.push(RespValue::Integer(
         info.last_ping_reply.map(|_| 1).unwrap_or(0),
     ));
-    fields.push(RespValue::BulkString(Some(Bytes::from("down-after-milliseconds"))));
+    fields.push(RespValue::BulkString(Some(Bytes::from(
+        "down-after-milliseconds",
+    ))));
     fields.push(RespValue::Integer(info.down_after_ms as i64));
     fields.push(RespValue::BulkString(Some(Bytes::from("info-refresh"))));
     fields.push(RespValue::Integer(0));
     fields.push(RespValue::BulkString(Some(Bytes::from("role-reported"))));
     fields.push(RespValue::BulkString(Some(Bytes::from("master"))));
-    fields.push(RespValue::BulkString(Some(Bytes::from("role-reported-time"))));
+    fields.push(RespValue::BulkString(Some(Bytes::from(
+        "role-reported-time",
+    ))));
     fields.push(RespValue::Integer(0));
     fields.push(RespValue::BulkString(Some(Bytes::from("config-epoch"))));
     fields.push(RespValue::Integer(info.failover_epoch as i64));
     fields.push(RespValue::BulkString(Some(Bytes::from("num-slaves"))));
     fields.push(RespValue::Integer(info.replicas.len() as i64));
-    fields.push(RespValue::BulkString(Some(Bytes::from("num-other-sentinels"))));
+    fields.push(RespValue::BulkString(Some(Bytes::from(
+        "num-other-sentinels",
+    ))));
     fields.push(RespValue::Integer(info.sentinels.len() as i64));
     fields.push(RespValue::BulkString(Some(Bytes::from("quorum"))));
     fields.push(RespValue::Integer(info.quorum as i64));
@@ -295,6 +317,7 @@ async fn sentinel_master(name: &str, state: &SharedState) -> RespValue {
     RespValue::Array(Some(fields))
 }
 
+#[allow(clippy::vec_init_then_push)]
 async fn sentinel_replicas(name: &str, state: &SharedState) -> RespValue {
     let masters = state.masters.read().await;
     let info = match masters.get(name) {
@@ -321,27 +344,39 @@ async fn sentinel_replicas(name: &str, state: &SharedState) -> RespValue {
         fields.push(RespValue::BulkString(None));
         fields.push(RespValue::BulkString(Some(Bytes::from("flags"))));
         fields.push(RespValue::BulkString(Some(Bytes::from("slave"))));
-        fields.push(RespValue::BulkString(Some(Bytes::from("link-pending-commands"))));
+        fields.push(RespValue::BulkString(Some(Bytes::from(
+            "link-pending-commands",
+        ))));
         fields.push(RespValue::Integer(0));
         fields.push(RespValue::BulkString(Some(Bytes::from("link-refcount"))));
         fields.push(RespValue::Integer(0));
         fields.push(RespValue::BulkString(Some(Bytes::from("last-ping-sent"))));
         fields.push(RespValue::Integer(0));
-        fields.push(RespValue::BulkString(Some(Bytes::from("last-ok-ping-reply"))));
+        fields.push(RespValue::BulkString(Some(Bytes::from(
+            "last-ok-ping-reply",
+        ))));
         fields.push(RespValue::Integer(1));
         fields.push(RespValue::BulkString(Some(Bytes::from("last-ping-reply"))));
         fields.push(RespValue::Integer(1));
-        fields.push(RespValue::BulkString(Some(Bytes::from("down-after-milliseconds"))));
+        fields.push(RespValue::BulkString(Some(Bytes::from(
+            "down-after-milliseconds",
+        ))));
         fields.push(RespValue::Integer(info.down_after_ms as i64));
         fields.push(RespValue::BulkString(Some(Bytes::from("info-refresh"))));
         fields.push(RespValue::Integer(0));
         fields.push(RespValue::BulkString(Some(Bytes::from("role-reported"))));
         fields.push(RespValue::BulkString(Some(Bytes::from("slave"))));
-        fields.push(RespValue::BulkString(Some(Bytes::from("role-reported-time"))));
+        fields.push(RespValue::BulkString(Some(Bytes::from(
+            "role-reported-time",
+        ))));
         fields.push(RespValue::Integer(0));
-        fields.push(RespValue::BulkString(Some(Bytes::from("master-link-down-time"))));
+        fields.push(RespValue::BulkString(Some(Bytes::from(
+            "master-link-down-time",
+        ))));
         fields.push(RespValue::Integer(0));
-        fields.push(RespValue::BulkString(Some(Bytes::from("master-link-status"))));
+        fields.push(RespValue::BulkString(Some(Bytes::from(
+            "master-link-status",
+        ))));
         fields.push(RespValue::BulkString(Some(Bytes::from("ok"))));
         fields.push(RespValue::BulkString(Some(Bytes::from("master-host"))));
         fields.push(RespValue::BulkString(Some(Bytes::from(
@@ -353,7 +388,9 @@ async fn sentinel_replicas(name: &str, state: &SharedState) -> RespValue {
         ))));
         fields.push(RespValue::BulkString(Some(Bytes::from("slave-priority"))));
         fields.push(RespValue::Integer(replica.priority));
-        fields.push(RespValue::BulkString(Some(Bytes::from("slave-repl-offset"))));
+        fields.push(RespValue::BulkString(Some(Bytes::from(
+            "slave-repl-offset",
+        ))));
         fields.push(RespValue::Integer(replica.replication_offset as i64));
 
         result.push(RespValue::Array(Some(fields)));
@@ -362,6 +399,7 @@ async fn sentinel_replicas(name: &str, state: &SharedState) -> RespValue {
     RespValue::Array(Some(result))
 }
 
+#[allow(clippy::vec_init_then_push)]
 async fn sentinel_sentinels(name: &str, state: &SharedState) -> RespValue {
     let masters = state.masters.read().await;
     let info = match masters.get(name) {
@@ -390,23 +428,33 @@ async fn sentinel_sentinels(name: &str, state: &SharedState) -> RespValue {
         ))));
         fields.push(RespValue::BulkString(Some(Bytes::from("flags"))));
         fields.push(RespValue::BulkString(Some(Bytes::from("sentinel"))));
-        fields.push(RespValue::BulkString(Some(Bytes::from("link-pending-commands"))));
+        fields.push(RespValue::BulkString(Some(Bytes::from(
+            "link-pending-commands",
+        ))));
         fields.push(RespValue::Integer(0));
         fields.push(RespValue::BulkString(Some(Bytes::from("link-refcount"))));
         fields.push(RespValue::Integer(0));
         fields.push(RespValue::BulkString(Some(Bytes::from("last-ping-sent"))));
         fields.push(RespValue::Integer(0));
-        fields.push(RespValue::BulkString(Some(Bytes::from("last-ok-ping-reply"))));
+        fields.push(RespValue::BulkString(Some(Bytes::from(
+            "last-ok-ping-reply",
+        ))));
         fields.push(RespValue::Integer(1));
         fields.push(RespValue::BulkString(Some(Bytes::from("last-ping-reply"))));
         fields.push(RespValue::Integer(1));
-        fields.push(RespValue::BulkString(Some(Bytes::from("down-after-milliseconds"))));
+        fields.push(RespValue::BulkString(Some(Bytes::from(
+            "down-after-milliseconds",
+        ))));
         fields.push(RespValue::Integer(info.down_after_ms as i64));
-        fields.push(RespValue::BulkString(Some(Bytes::from("last-hello-message"))));
+        fields.push(RespValue::BulkString(Some(Bytes::from(
+            "last-hello-message",
+        ))));
         fields.push(RespValue::Integer(0));
         fields.push(RespValue::BulkString(Some(Bytes::from("voted-leader"))));
         fields.push(RespValue::BulkString(Some(Bytes::from("?"))));
-        fields.push(RespValue::BulkString(Some(Bytes::from("voted-leader-epoch"))));
+        fields.push(RespValue::BulkString(Some(Bytes::from(
+            "voted-leader-epoch",
+        ))));
         fields.push(RespValue::Integer(0));
 
         result.push(RespValue::Array(Some(fields)));
@@ -560,9 +608,9 @@ async fn handle_info(_args: &[&str], state: &SharedState) -> RespValue {
     let mut lines = Vec::new();
     lines.push("# Sentinel".to_string());
     lines.push(format!("sentinel_masters:{}", masters.len()));
-    lines.push(format!("sentinel_tilt:0"));
-    lines.push(format!("sentinel_running_scripts:0"));
-    lines.push(format!("sentinel_scripts_queue_length:0"));
+    lines.push("sentinel_tilt:0".to_string());
+    lines.push("sentinel_running_scripts:0".to_string());
+    lines.push("sentinel_scripts_queue_length:0".to_string());
 
     for (name, info) in masters.iter() {
         lines.push(format!(
@@ -689,7 +737,6 @@ fn parse_resp_array(input: &str) -> Vec<String> {
     };
 
     let mut in_bulk = false;
-    let mut bulk_len: usize = 0;
 
     for line in lines {
         if in_bulk {
@@ -701,8 +748,8 @@ fn parse_resp_array(input: &str) -> Vec<String> {
             continue;
         }
 
-        if line.starts_with('$') {
-            bulk_len = match line[1..].trim().parse() {
+        if let Some(stripped) = line.strip_prefix('$') {
+            let _bulk_len: usize = match stripped.trim().parse() {
                 Ok(n) => n,
                 Err(_) => return result,
             };
@@ -785,7 +832,10 @@ mod tests {
             RespValue::BulkString(Some(Bytes::from("bb"))),
         ]));
         let encoded = encode_resp(&v);
-        assert_eq!(String::from_utf8_lossy(&encoded), "*2\r\n$1\r\na\r\n$2\r\nbb\r\n");
+        assert_eq!(
+            String::from_utf8_lossy(&encoded),
+            "*2\r\n$1\r\na\r\n$2\r\nbb\r\n"
+        );
     }
 
     #[test]

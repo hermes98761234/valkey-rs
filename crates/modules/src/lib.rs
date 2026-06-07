@@ -2,7 +2,7 @@ mod api;
 mod ffi;
 
 pub use api::ModuleRegistry;
-pub use ffi::{RedisModuleCtx, RedisModuleCmdFunc};
+pub use ffi::{RedisModuleCmdFunc, RedisModuleCtx};
 
 use bytes::Bytes;
 use std::collections::HashMap;
@@ -54,15 +54,16 @@ pub fn registry() -> &'static Mutex<Registry> {
 pub fn module_load(store: &Arc<Store>, path: &str, _args: &[&str]) -> RespValue {
     let path = Path::new(path);
     if !path.exists() {
-        return RespValue::Error(
-            format!("ERR Error loading shared library {}: No such file", path.display()).into(),
-        );
+        return RespValue::Error(format!(
+            "ERR Error loading shared library {}: No such file",
+            path.display()
+        ));
     }
 
     let lib = unsafe {
         match libloading::Library::new(path) {
             Ok(l) => l,
-            Err(e) => return RespValue::Error(format!("ERR Error loading module: {}", e).into()),
+            Err(e) => return RespValue::Error(format!("ERR Error loading module: {}", e)),
         }
     };
 
@@ -70,7 +71,9 @@ pub fn module_load(store: &Arc<Store>, path: &str, _args: &[&str]) -> RespValue 
     let on_load: libloading::Symbol<ffi::OnLoadFn> = unsafe {
         match lib.get(b"RedisModule_OnLoad\0") {
             Ok(s) => s,
-            Err(e) => return RespValue::Error(format!("ERR Module has no RedisModule_OnLoad: {}", e).into()),
+            Err(e) => {
+                return RespValue::Error(format!("ERR Module has no RedisModule_OnLoad: {}", e))
+            }
         }
     };
 
@@ -95,11 +98,12 @@ pub fn module_load(store: &Arc<Store>, path: &str, _args: &[&str]) -> RespValue 
 
     let mut reg = registry().lock().unwrap();
     if reg.modules.contains_key(&mod_name) {
-        return RespValue::Error(format!("ERR Module {} already loaded", mod_name).into());
+        return RespValue::Error(format!("ERR Module {} already loaded", mod_name));
     }
 
     for cmd in &registered_cmds {
-        reg.command_map.insert(cmd.to_ascii_uppercase(), mod_name.clone());
+        reg.command_map
+            .insert(cmd.to_ascii_uppercase(), mod_name.clone());
     }
 
     reg.modules.insert(
@@ -124,7 +128,9 @@ pub fn module_unload(name: &str) -> RespValue {
             }
             RespValue::SimpleString("OK".into())
         }
-        None => RespValue::Error(format!("ERR Error unloading module: no such module with that name").into()),
+        None => RespValue::Error(
+            "ERR Error unloading module: no such module with that name".to_string(),
+        ),
     }
 }
 
@@ -166,11 +172,17 @@ pub fn module_call(store: &Arc<Store>, cmd: &[Bytes]) -> Option<RespValue> {
     // Convert args to RedisModuleString pointers
     let mut arg_strings: Vec<*mut ffi::RedisModuleString> = args
         .iter()
-        .map(|a| Box::into_raw(Box::new(api::ModuleString(a.clone()))) as *mut ffi::RedisModuleString)
+        .map(|a| {
+            Box::into_raw(Box::new(api::ModuleString(a.clone()))) as *mut ffi::RedisModuleString
+        })
         .collect();
 
     let rc = unsafe {
-        cmd_fn(ctx_ptr, arg_strings.as_mut_ptr(), arg_strings.len() as std::os::raw::c_int)
+        cmd_fn(
+            ctx_ptr,
+            arg_strings.as_mut_ptr(),
+            arg_strings.len() as std::os::raw::c_int,
+        )
     };
 
     // Free arg strings
@@ -203,20 +215,25 @@ pub fn handle_module_cmd(args: &[Bytes], store: &Arc<Store>) -> RespValue {
     match sub.as_str() {
         "LOAD" => {
             if args.len() < 2 {
-                return RespValue::Error("ERR wrong number of arguments for 'module|load' command".into());
+                return RespValue::Error(
+                    "ERR wrong number of arguments for 'module|load' command".into(),
+                );
             }
             let path = match std::str::from_utf8(&args[1]) {
                 Ok(p) => p,
                 Err(_) => return RespValue::Error("ERR invalid path".into()),
             };
-            let extra: Vec<&str> = args[2..].iter()
+            let extra: Vec<&str> = args[2..]
+                .iter()
                 .filter_map(|a| std::str::from_utf8(a).ok())
                 .collect();
             module_load(store, path, &extra)
         }
         "UNLOAD" => {
             if args.len() != 2 {
-                return RespValue::Error("ERR wrong number of arguments for 'module|unload' command".into());
+                return RespValue::Error(
+                    "ERR wrong number of arguments for 'module|unload' command".into(),
+                );
             }
             let name = match std::str::from_utf8(&args[1]) {
                 Ok(n) => n,
@@ -225,6 +242,6 @@ pub fn handle_module_cmd(args: &[Bytes], store: &Arc<Store>) -> RespValue {
             module_unload(name)
         }
         "LIST" => module_list(),
-        _ => RespValue::Error(format!("ERR unknown subcommand '{}' for 'module'", sub).into()),
+        _ => RespValue::Error(format!("ERR unknown subcommand '{}' for 'module'", sub)),
     }
 }

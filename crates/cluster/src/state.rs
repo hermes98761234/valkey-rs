@@ -228,8 +228,7 @@ impl ClusterState {
         let mut slots_vec = Vec::with_capacity(NUM_SLOTS);
         slots_vec.resize_with(NUM_SLOTS, || None);
 
-        let slot_states_vec: Vec<SlotState> =
-            (0..NUM_SLOTS).map(|_| SlotState::Normal).collect();
+        let slot_states_vec: Vec<SlotState> = (0..NUM_SLOTS).map(|_| SlotState::Normal).collect();
 
         let myself_id = myself.id.clone();
         let nodes = DashMap::new();
@@ -505,11 +504,18 @@ mod tests {
         let state = ClusterState::new(node);
         // Normal -> Migrating is valid
         assert!(state
-            .set_slot_state(0, SlotState::Migrating { target: "node_b".into() })
+            .set_slot_state(
+                0,
+                SlotState::Migrating {
+                    target: "node_b".into()
+                }
+            )
             .is_ok());
         assert_eq!(
             state.slot_state(0),
-            Some(SlotState::Migrating { target: "node_b".into() })
+            Some(SlotState::Migrating {
+                target: "node_b".into()
+            })
         );
         assert!(state.slot_state(0).unwrap().is_migrating());
         assert_eq!(
@@ -528,11 +534,18 @@ mod tests {
         let state = ClusterState::new(node);
         // Normal -> Importing is valid
         assert!(state
-            .set_slot_state(0, SlotState::Importing { source: "node_a".into() })
+            .set_slot_state(
+                0,
+                SlotState::Importing {
+                    source: "node_a".into()
+                }
+            )
             .is_ok());
         assert_eq!(
             state.slot_state(0),
-            Some(SlotState::Importing { source: "node_a".into() })
+            Some(SlotState::Importing {
+                source: "node_a".into()
+            })
         );
         assert!(state.slot_state(0).unwrap().is_importing());
         assert_eq!(
@@ -551,7 +564,12 @@ mod tests {
         let state = ClusterState::new(node);
         // Set migrating
         state
-            .set_slot_state(0, SlotState::Migrating { target: "node_b".into() })
+            .set_slot_state(
+                0,
+                SlotState::Migrating {
+                    target: "node_b".into(),
+                },
+            )
             .unwrap();
         // Migrating -> Normal (STABLE) is valid
         assert!(state.set_slot_state(0, SlotState::Normal).is_ok());
@@ -575,9 +593,11 @@ mod tests {
     #[test]
     fn slot_state_transition_validation() {
         // Normal -> anything = ok
-        assert!(SlotState::Normal.transition(&SlotState::Migrating { target: "x".into() })
+        assert!(SlotState::Normal
+            .transition(&SlotState::Migrating { target: "x".into() })
             .is_ok());
-        assert!(SlotState::Normal.transition(&SlotState::Importing { source: "x".into() })
+        assert!(SlotState::Normal
+            .transition(&SlotState::Importing { source: "x".into() })
             .is_ok());
         assert!(SlotState::Normal.transition(&SlotState::Normal).is_ok());
 

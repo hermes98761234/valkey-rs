@@ -8,11 +8,8 @@ use tracing::{debug, info, warn};
 /// Connect to a Valkey/Redis instance and send a PING command.
 /// Returns true if we get a PONG reply within the timeout.
 async fn ping_node(addr: SocketAddr, timeout_ms: u64) -> bool {
-    let result = tokio::time::timeout(
-        Duration::from_millis(timeout_ms),
-        TcpStream::connect(addr),
-    )
-    .await;
+    let result =
+        tokio::time::timeout(Duration::from_millis(timeout_ms), TcpStream::connect(addr)).await;
 
     let mut stream = match result {
         Ok(Ok(s)) => s,
@@ -56,11 +53,8 @@ async fn ping_node(addr: SocketAddr, timeout_ms: u64) -> bool {
 
 /// Send INFO replication to a node and parse replica information.
 async fn fetch_replicas(addr: SocketAddr, timeout_ms: u64) -> Vec<ReplicaInfo> {
-    let result = tokio::time::timeout(
-        Duration::from_millis(timeout_ms),
-        TcpStream::connect(addr),
-    )
-    .await;
+    let result =
+        tokio::time::timeout(Duration::from_millis(timeout_ms), TcpStream::connect(addr)).await;
 
     let mut stream = match result {
         Ok(Ok(s)) => s,
@@ -68,7 +62,10 @@ async fn fetch_replicas(addr: SocketAddr, timeout_ms: u64) -> Vec<ReplicaInfo> {
     };
 
     let cmd = b"*2\r\n$4\r\nINFO\r\n$11\r\nreplication\r\n";
-    if tokio::io::AsyncWriteExt::write_all(&mut stream, cmd).await.is_err() {
+    if tokio::io::AsyncWriteExt::write_all(&mut stream, cmd)
+        .await
+        .is_err()
+    {
         return Vec::new();
     }
 

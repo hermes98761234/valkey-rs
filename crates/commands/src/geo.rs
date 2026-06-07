@@ -192,9 +192,18 @@ pub fn geoadd(db: &Db, args: &[Bytes]) -> Result<RespValue, String> {
     let mut ch = false;
     while idx < args.len() {
         match str_arg(&args[idx]).to_ascii_uppercase().as_str() {
-            "NX" => { nx = true; idx += 1; }
-            "XX" => { xx = true; idx += 1; }
-            "CH" => { ch = true; idx += 1; }
+            "NX" => {
+                nx = true;
+                idx += 1;
+            }
+            "XX" => {
+                xx = true;
+                idx += 1;
+            }
+            "CH" => {
+                ch = true;
+                idx += 1;
+            }
             _ => break,
         }
     }
@@ -209,12 +218,16 @@ pub fn geoadd(db: &Db, args: &[Bytes]) -> Result<RespValue, String> {
     let mut added = 0i64;
     let mut changed = 0i64;
     while idx + 2 < args.len() {
-        let lon: f64 = str_arg(&args[idx]).parse().map_err(|_| "ERR invalid longitude")?;
-        let lat: f64 = str_arg(&args[idx + 1]).parse().map_err(|_| "ERR invalid latitude")?;
-        if lon < GEO_LON_MIN || lon > GEO_LON_MAX {
+        let lon: f64 = str_arg(&args[idx])
+            .parse()
+            .map_err(|_| "ERR invalid longitude")?;
+        let lat: f64 = str_arg(&args[idx + 1])
+            .parse()
+            .map_err(|_| "ERR invalid latitude")?;
+        if !(GEO_LON_MIN..=GEO_LON_MAX).contains(&lon) {
             return Err("ERR invalid longitude".into());
         }
-        if lat < GEO_LAT_MIN || lat > GEO_LAT_MAX {
+        if !(GEO_LAT_MIN..=GEO_LAT_MAX).contains(&lat) {
             return Err("ERR invalid latitude".into());
         }
         let member = args[idx + 2].clone();
@@ -246,7 +259,11 @@ pub fn geodist(db: &Db, args: &[Bytes]) -> Result<RespValue, String> {
     if args.len() < 3 || args.len() > 4 {
         return Err("ERR wrong number of arguments for 'geodist' command".into());
     }
-    let unit = if args.len() == 4 { str_arg(&args[3]) } else { "m".into() };
+    let unit = if args.len() == 4 {
+        str_arg(&args[3])
+    } else {
+        "m".into()
+    };
     let zset = match get_zset(db, &args[0]) {
         Some(z) => z,
         None => return Ok(RespValue::BulkString(None)),
@@ -275,16 +292,22 @@ pub fn geohash(db: &Db, args: &[Bytes]) -> Result<RespValue, String> {
         return Err("ERR wrong number of arguments for 'geohash' command".into());
     }
     let zset = get_zset(db, &args[0]);
-    let results = args[1..].iter().map(|member| {
-        let score = zset.as_ref().and_then(|z| z.members.get(member)).map(|s| s.0);
-        match score {
-            Some(s) => {
-                let (lon, lat) = decode_geohash(s);
-                RespValue::BulkString(Some(sb(encode_geohash_string(lon, lat))))
+    let results = args[1..]
+        .iter()
+        .map(|member| {
+            let score = zset
+                .as_ref()
+                .and_then(|z| z.members.get(member))
+                .map(|s| s.0);
+            match score {
+                Some(s) => {
+                    let (lon, lat) = decode_geohash(s);
+                    RespValue::BulkString(Some(sb(encode_geohash_string(lon, lat))))
+                }
+                None => RespValue::BulkString(None),
             }
-            None => RespValue::BulkString(None),
-        }
-    }).collect();
+        })
+        .collect();
     Ok(RespValue::Array(Some(results)))
 }
 
@@ -297,19 +320,25 @@ pub fn geopos(db: &Db, args: &[Bytes]) -> Result<RespValue, String> {
         return Err("ERR wrong number of arguments for 'geopos' command".into());
     }
     let zset = get_zset(db, &args[0]);
-    let results = args[1..].iter().map(|member| {
-        let score = zset.as_ref().and_then(|z| z.members.get(member)).map(|s| s.0);
-        match score {
-            Some(s) => {
-                let (lon, lat) = decode_geohash(s);
-                RespValue::Array(Some(vec![
-                    RespValue::BulkString(Some(fmt_f64(lon))),
-                    RespValue::BulkString(Some(fmt_f64(lat))),
-                ]))
+    let results = args[1..]
+        .iter()
+        .map(|member| {
+            let score = zset
+                .as_ref()
+                .and_then(|z| z.members.get(member))
+                .map(|s| s.0);
+            match score {
+                Some(s) => {
+                    let (lon, lat) = decode_geohash(s);
+                    RespValue::Array(Some(vec![
+                        RespValue::BulkString(Some(fmt_f64(lon))),
+                        RespValue::BulkString(Some(fmt_f64(lat))),
+                    ]))
+                }
+                None => RespValue::Array(None),
             }
-            None => RespValue::Array(None),
-        }
-    }).collect();
+        })
+        .collect();
     Ok(RespValue::Array(Some(results)))
 }
 
@@ -360,13 +389,23 @@ fn geosearch_inner(
             "FROMMEMBER" => {
                 let member = &args[idx];
                 idx += 1;
-                let zset = get_zset(db, key).ok_or("ERR could not perform this operation on a key holding the wrong kind of value")?;
-                let s = zset.members.get(member).ok_or("ERR could not decode requested zset member")?.0;
+                let zset = get_zset(db, key).ok_or(
+                    "ERR could not perform this operation on a key holding the wrong kind of value",
+                )?;
+                let s = zset
+                    .members
+                    .get(member)
+                    .ok_or("ERR could not decode requested zset member")?
+                    .0;
                 decode_geohash(s)
             }
             "FROMLONLAT" => {
-                let lon: f64 = str_arg(&args[idx]).parse().map_err(|_| "ERR invalid longitude")?;
-                let lat: f64 = str_arg(&args[idx + 1]).parse().map_err(|_| "ERR invalid latitude")?;
+                let lon: f64 = str_arg(&args[idx])
+                    .parse()
+                    .map_err(|_| "ERR invalid longitude")?;
+                let lat: f64 = str_arg(&args[idx + 1])
+                    .parse()
+                    .map_err(|_| "ERR invalid latitude")?;
                 idx += 2;
                 (lon, lat)
             }
@@ -376,23 +415,29 @@ fn geosearch_inner(
 
     // Shape
     enum Shape {
-        Radius(f64),       // meters
-        Box(f64, f64),     // width, height in meters
+        Radius(f64),   // meters
+        Box(f64, f64), // width, height in meters
     }
     let shape = {
         let kind = str_upper(&args[idx]);
         idx += 1;
         match kind.as_str() {
             "BYRADIUS" => {
-                let r: f64 = str_arg(&args[idx]).parse().map_err(|_| "ERR invalid radius")?;
+                let r: f64 = str_arg(&args[idx])
+                    .parse()
+                    .map_err(|_| "ERR invalid radius")?;
                 let unit = str_arg(&args[idx + 1]);
                 idx += 2;
                 let r_m = meters_from_unit(r, &unit).ok_or("ERR unsupported unit")?;
                 Shape::Radius(r_m)
             }
             "BYBOX" => {
-                let w: f64 = str_arg(&args[idx]).parse().map_err(|_| "ERR invalid width")?;
-                let h: f64 = str_arg(&args[idx + 1]).parse().map_err(|_| "ERR invalid height")?;
+                let w: f64 = str_arg(&args[idx])
+                    .parse()
+                    .map_err(|_| "ERR invalid width")?;
+                let h: f64 = str_arg(&args[idx + 1])
+                    .parse()
+                    .map_err(|_| "ERR invalid height")?;
                 let unit = str_arg(&args[idx + 2]);
                 idx += 3;
                 let w_m = meters_from_unit(w, &unit).ok_or("ERR unsupported unit")?;
@@ -415,21 +460,45 @@ fn geosearch_inner(
 
     while idx < args.len() {
         match str_upper(&args[idx]).as_str() {
-            "ASC" => { asc = true; idx += 1; }
-            "DESC" => { desc = true; idx += 1; }
+            "ASC" => {
+                asc = true;
+                idx += 1;
+            }
+            "DESC" => {
+                desc = true;
+                idx += 1;
+            }
             "COUNT" => {
-                count = Some(str_arg(&args[idx + 1]).parse().map_err(|_| "ERR invalid count")?);
+                count = Some(
+                    str_arg(&args[idx + 1])
+                        .parse()
+                        .map_err(|_| "ERR invalid count")?,
+                );
                 idx += 2;
                 if idx < args.len() && str_upper(&args[idx]) == "ANY" {
                     _any = true;
                     idx += 1;
                 }
             }
-            "WITHCOORD" => { withcoord = true; idx += 1; }
-            "WITHDIST" => { withdist = true; idx += 1; }
-            "WITHHASH" => { withhash = true; idx += 1; }
-            "STOREDIST" => { storedist = true; idx += 1; }
-            _ => { idx += 1; }
+            "WITHCOORD" => {
+                withcoord = true;
+                idx += 1;
+            }
+            "WITHDIST" => {
+                withdist = true;
+                idx += 1;
+            }
+            "WITHHASH" => {
+                withhash = true;
+                idx += 1;
+            }
+            "STOREDIST" => {
+                storedist = true;
+                idx += 1;
+            }
+            _ => {
+                idx += 1;
+            }
         }
     }
 
@@ -474,9 +543,17 @@ fn geosearch_inner(
 
     // Sort
     if asc {
-        results.sort_by(|a, b| a.dist_m.partial_cmp(&b.dist_m).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            a.dist_m
+                .partial_cmp(&b.dist_m)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
     } else if desc {
-        results.sort_by(|a, b| b.dist_m.partial_cmp(&a.dist_m).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.dist_m
+                .partial_cmp(&a.dist_m)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
     }
     if let Some(c) = count {
         results.truncate(c);
@@ -537,7 +614,15 @@ pub fn georadius(db: &Db, args: &[Bytes]) -> Result<RespValue, String> {
     let radius = args[3].clone();
     let unit = args[4].clone();
     let opts = &args[5..];
-    let mut new_args = vec![key, sb("FROMLONLAT"), lon, lat, sb("BYRADIUS"), radius, unit];
+    let mut new_args = vec![
+        key,
+        sb("FROMLONLAT"),
+        lon,
+        lat,
+        sb("BYRADIUS"),
+        radius,
+        unit,
+    ];
     new_args.extend_from_slice(opts);
     geosearch(db, &new_args)
 }

@@ -1,6 +1,6 @@
 //! FFI types matching the Redis Modules C API.
 
-use std::os::raw::{c_char, c_int, c_long, c_longlong};
+use std::os::raw::{c_char, c_int};
 
 pub const REDISMODULE_OK: c_int = 0;
 pub const REDISMODULE_ERR: c_int = 1;
@@ -20,6 +20,7 @@ pub struct RedisModuleString {
 
 /// An opaque Redis key handle.
 #[repr(C)]
+#[allow(dead_code)]
 pub struct RedisModuleKey {
     _opaque: [u8; 0],
 }

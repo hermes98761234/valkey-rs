@@ -632,7 +632,7 @@ async fn cmd_getex(args: &[Bytes], store: &Arc<Store>) -> RespValue {
         Some(entry) => match &entry.data {
             DataType::String(s) => bull(s.clone()),
             _ => unreachable!(),
-        }
+        },
         None => null_bulk(),
     }
 }
@@ -1150,7 +1150,11 @@ mod tests {
         ))
         .await;
         let r = (handle(
-            &[Bytes::from("GETEX"), Bytes::from("k"), Bytes::from("PERSIST")],
+            &[
+                Bytes::from("GETEX"),
+                Bytes::from("k"),
+                Bytes::from("PERSIST"),
+            ],
             &s,
         ))
         .await;
@@ -1199,7 +1203,11 @@ mod tests {
         ))
         .await;
         let r = (handle(
-            &[Bytes::from("GETEX"), Bytes::from("k"), Bytes::from("KEEPTTL")],
+            &[
+                Bytes::from("GETEX"),
+                Bytes::from("k"),
+                Bytes::from("KEEPTTL"),
+            ],
             &s,
         ))
         .await;

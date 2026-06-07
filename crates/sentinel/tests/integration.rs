@@ -110,11 +110,7 @@ async fn test_sentinel_master_not_found() {
     sleep(Duration::from_millis(200)).await;
 
     let reply = send_resp_cmd(&addr, &["SENTINEL", "MASTER", "nonexistent"]).await;
-    assert!(
-        reply.starts_with('-'),
-        "expected error, got: {:?}",
-        reply
-    );
+    assert!(reply.starts_with('-'), "expected error, got: {:?}", reply);
     assert!(reply.contains("not found"), "got: {:?}", reply);
 }
 
@@ -327,7 +323,14 @@ async fn test_sentinel_is_master_down() {
 
     let reply = send_resp_cmd(
         &addr,
-        &["SENTINEL", "IS-MASTER-DOWN-BY-ADDR", "127.0.0.1", "6379", "0", "*"],
+        &[
+            "SENTINEL",
+            "IS-MASTER-DOWN-BY-ADDR",
+            "127.0.0.1",
+            "6379",
+            "0",
+            "*",
+        ],
     )
     .await;
     // Should return [0, *, 0] — not down.

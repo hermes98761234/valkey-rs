@@ -29,8 +29,8 @@ use dashmap::mapref::one::Ref;
 use dashmap::DashMap;
 use ordered_float::OrderedFloat;
 
-mod listpack;
 mod intset;
+mod listpack;
 
 pub use intset::IntSet;
 pub use listpack::{ListPack, ListPackEntry};
@@ -59,7 +59,10 @@ impl DataType {
     /// Convert IntSet → Set in-place. No-op if already a Set.
     pub fn upgrade_to_set(&mut self) {
         if let DataType::IntSet(is) = self {
-            let s = is.iter().map(|v| Bytes::from(v.to_string())).collect::<HashSet<Bytes>>();
+            let s = is
+                .iter()
+                .map(|v| Bytes::from(v.to_string()))
+                .collect::<HashSet<Bytes>>();
             *self = DataType::Set(s);
         }
     }
@@ -136,16 +139,28 @@ impl DataType {
     /// Get a list range without upgrading the encoding.
     pub fn list_range(&self, start: i64, stop: i64) -> Option<Vec<Bytes>> {
         let len = self.list_len()? as i64;
-        let s = if start < 0 { (len + start).max(0) } else { start } as usize;
-        let e = if stop < 0 { (len + stop).max(-1) } else { stop.min(len - 1) } as usize;
+        let s = if start < 0 {
+            (len + start).max(0)
+        } else {
+            start
+        } as usize;
+        let e = if stop < 0 {
+            (len + stop).max(-1)
+        } else {
+            stop.min(len - 1)
+        } as usize;
         if s > e || s >= len as usize {
             return Some(vec![]);
         }
         match self {
             DataType::List(l) => Some(l.iter().skip(s).take(e - s + 1).cloned().collect()),
-            DataType::ListPack(lp) => {
-                Some(lp.iter().skip(s).take(e - s + 1).map(|e| e.to_bytes()).collect())
-            }
+            DataType::ListPack(lp) => Some(
+                lp.iter()
+                    .skip(s)
+                    .take(e - s + 1)
+                    .map(|e| e.to_bytes())
+                    .collect(),
+            ),
             _ => None,
         }
     }

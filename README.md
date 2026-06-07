@@ -18,6 +18,11 @@ A production-quality, full-featured Valkey/Redis rewrite in Rust.
 - **TLS support** — encrypted connections via `tokio-rustls` with optional client cert auth
 - **Replication (PSYNC)** — leader-follower replication with full/partial sync and backlog
 - **Cluster mode** — hash slot routing (CRC16 + hashtags), gossip protocol, MOVED/ASK redirections
+- **Sentinel mode** — automatic failover with leader election, quorum voting, and replica promotion
+- **Geo commands** — GEOADD, GEODIST, GEOPOS, GEOSEARCH, GEORADIUS with geohash encoding
+- **Compact encodings** — listpack and intset for memory-efficient small aggregates
+- **Client-side caching** — CLIENT TRACKING with invalidation messages (RESP3)
+- **Redis Modules API** — C ABI compatibility layer for loading external `.so` modules
 
 ## Getting Started
 
@@ -122,22 +127,26 @@ TLS_PORT=6380 TLS_CERT=cert.pem TLS_KEY=key.pem TLS_CA_CERT=ca.pem TLS_AUTH_CLIE
 | **Server** | PING, INFO, CONFIG, DBSIZE, TIME, CLIENT, COMMAND, SELECT, AUTH, ACL, SHUTDOWN, SAVE, BGSAVE, SLOWLOG, LATENCY, MODULE | ✅ Implemented |
 | **Replication** | REPLICAOF, PSYNC, ROLE, REPLCONF | ✅ Implemented |
 | **Cluster** | CLUSTER INFO, CLUSTER NODES, CLUSTER SLOTS, CLUSTER KEYSLOT, CLUSTER ADDSLOTS, CLUSTER DELSLOTS, CLUSTER MEET, CLUSTER FORGET, CLUSTER REPLICATE | ✅ Implemented |
+| **Geo** | GEOADD, GEODIST, GEOPOS, GEOSEARCH, GEOSEARCHSTORE, GEORADIUS, GEORADIUSBYMEMBER | ✅ Implemented |
+| **Modules** | MODULE LOAD, MODULE UNLOAD, MODULE LIST | ✅ Implemented |
 
 ## Architecture
 
-The project is a Cargo workspace of 9 crates, each handling a distinct responsibility:
+The project is a Cargo workspace of 11 crates, each handling a distinct responsibility:
 
 ```
 valkey-rs/
 ├── crates/
 │   ├── proto/         RESP2/RESP3 protocol encoding and decoding (RespEncoder, RespDecoder)
 │   ├── storage/       In-memory key-value store (DashMap-based, sharded, async-safe)
-│   ├── commands/      Command dispatch and per-family handlers (ACL, strings, hashes, lists, sets, zsets, streams, transactions, pubsub, scripting, server, replication)
+│   ├── commands/      Command dispatch and per-family handlers (ACL, strings, hashes, lists, sets, zsets, streams, transactions, pubsub, scripting, server, replication, geo)
 │   ├── persistence/   RDB snapshot save/load and AOF journaling (FsyncPolicy: EverySec)
 │   ├── replication/   Leader-follower replication (PSYNC, circular buffer backlog, command propagation)
 │   ├── cluster/       Cluster mode (CRC16 hash slots, hashtag extraction, gossip, MOVED/ASK, ClusterState)
 │   ├── pubsub/        Publish/subscribe engine with keyspace notification support
 │   ├── scripting/     Lua 5.4 scripting via mlua (EVAL, EVALSHA, SCRIPT commands)
+│   ├── modules/       Redis Modules C API compatibility layer (MODULE LOAD/UNLOAD/LIST, FFI bindings)
+│   ├── sentinel/      Sentinel mode server with automatic failover, monitoring, and leader election
 │   └── server/        Main entry point — TCP/TLS listeners, connection handler, ClientStream abstraction, AOF auto-append, auto-save
 ```
 
@@ -156,18 +165,17 @@ Client → TcpListener / TlsAcceptor → ClientStream (Plain / TLS)
 cargo test --all
 ```
 
-Note: 71 pre-existing test failures exist in the `valkey-commands` crate (set/string/server tests) — these are known issues carried over from the original codebase that test expected behavior not yet fully aligned with this rewrite.
-
 ## Roadmap
 
 - [ ] Full blocking WAIT semantics for synchronous replication guarantee
 - [ ] Cluster resharding (live slot migration between nodes)
 - [ ] CLUSTER BUMPEPOCH and CONFIG REWRITE cluster commands
-- [ ] Sentinel mode for automatic failover
-- [ ] CLIENT TRACKING with invalidation messages
-- [ ] Memory-efficient encoding for small aggregates (ziplist, listpack)
-- [ ] Redis Modules API compatibility layer
-- [ ] Geo commands (GEOADD, GEODIST, GEORADIUS, GEOSEARCH)
+- [x] Sentinel mode for automatic failover
+- [x] CLIENT TRACKING with invalidation messages
+- [x] Memory-efficient encoding for small aggregates (listpack, intset)
+- [x] Redis Modules API compatibility layer
+- [x] Geo commands (GEOADD, GEODIST, GEORADIUS, GEOSEARCH)
+- [x] OBJECT ENCODING for compact type introspection
 
 ## License
 

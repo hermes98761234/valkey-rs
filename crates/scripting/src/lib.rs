@@ -41,8 +41,8 @@ pub struct FunctionEntry {
 /// ScriptEngine manages a sandboxed Lua VM for EVAL/EVALSHA/FCALL/FUNCTION.
 pub struct ScriptEngine {
     lua: Mutex<Lua>,
-    scripts: DashMap<String, String>,                   // SHA1 -> script source
-    functions: DashMap<String, FunctionEntry>,           // name -> FunctionEntry
+    scripts: DashMap<String, String>, // SHA1 -> script source
+    functions: DashMap<String, FunctionEntry>, // name -> FunctionEntry
     /// Set to true for read-only mode (EVALRO/EVALSHARO/FCALL_RO).
     read_only: bool,
 }
@@ -238,7 +238,10 @@ impl ScriptEngine {
                 if ro && is_write_command(&cmd) {
                     let err_table = lua_ctx.create_table().unwrap();
                     err_table
-                        .set("err", "ERR Write commands are not allowed in read-only mode")
+                        .set(
+                            "err",
+                            "ERR Write commands are not allowed in read-only mode",
+                        )
                         .unwrap();
                     return Ok(mlua::Value::Table(err_table));
                 }
@@ -290,7 +293,10 @@ impl ScriptEngine {
             if read_only && is_write_command(&cmd) {
                 let err_table = lua_ctx.create_table().unwrap();
                 err_table
-                    .set("err", "ERR Write commands are not allowed in read-only mode")
+                    .set(
+                        "err",
+                        "ERR Write commands are not allowed in read-only mode",
+                    )
                     .unwrap();
                 return Ok(mlua::Value::Table(err_table));
             }
@@ -355,8 +361,7 @@ impl ScriptEngine {
         }
 
         // redis.set_resp_ver(version) — stub
-        let set_resp_fn =
-            lua.create_function(|_lua_ctx, _v: i64| Ok(()));
+        let set_resp_fn = lua.create_function(|_lua_ctx, _v: i64| Ok(()));
         if let Ok(f) = set_resp_fn {
             redis_table.set("set_resp_ver", f).unwrap();
         }
@@ -423,10 +428,7 @@ impl ScriptEngine {
         let entry = match self.functions.get(name) {
             Some(e) => e.clone(),
             None => {
-                return RespValue::Error(format!(
-                    "ERR Function {} not found",
-                    name
-                ));
+                return RespValue::Error(format!("ERR Function {} not found", name));
             }
         };
         self.eval_impl(&entry.body, keys, args, store, read_only)
@@ -472,9 +474,7 @@ impl ScriptEngine {
         };
 
         if !replace && self.functions.contains_key(&name) {
-            return RespValue::Error(
-                "ERR Function already exists".into(),
-            );
+            return RespValue::Error("ERR Function already exists".into());
         }
 
         let sha = Self::sha1hex(code);
@@ -538,16 +538,14 @@ impl ScriptEngine {
                     ))),
                     RespValue::BulkString(Some(Bytes::from("functions"))),
                     // Sub-array with function details
-                    RespValue::Array(Some(vec![
-                        RespValue::Array(Some(vec![
-                            RespValue::BulkString(Some(Bytes::from("name"))),
-                            RespValue::BulkString(Some(Bytes::from(name))),
-                            RespValue::BulkString(Some(Bytes::from("description"))),
-                            RespValue::BulkString(None),
-                            RespValue::BulkString(Some(Bytes::from("flags"))),
-                            RespValue::Array(Some(vec![])),
-                        ])),
-                    ])),
+                    RespValue::Array(Some(vec![RespValue::Array(Some(vec![
+                        RespValue::BulkString(Some(Bytes::from("name"))),
+                        RespValue::BulkString(Some(Bytes::from(name))),
+                        RespValue::BulkString(Some(Bytes::from("description"))),
+                        RespValue::BulkString(None),
+                        RespValue::BulkString(Some(Bytes::from("flags"))),
+                        RespValue::Array(Some(vec![])),
+                    ]))])),
                 ];
                 RespValue::Array(Some(func_desc))
             })
@@ -590,17 +588,15 @@ impl ScriptEngine {
             RespValue::BulkString(Some(Bytes::from("running_script"))),
             RespValue::BulkString(None),
             RespValue::BulkString(Some(Bytes::from("engines"))),
-            RespValue::Array(Some(vec![
+            RespValue::Array(Some(vec![RespValue::Array(Some(vec![
+                RespValue::BulkString(Some(Bytes::from("LUA"))),
                 RespValue::Array(Some(vec![
-                    RespValue::BulkString(Some(Bytes::from("LUA"))),
-                    RespValue::Array(Some(vec![
-                        RespValue::BulkString(Some(Bytes::from("libraries_count"))),
-                        RespValue::Integer(1),
-                        RespValue::BulkString(Some(Bytes::from("functions_count"))),
-                        RespValue::Integer(num_functions),
-                    ])),
+                    RespValue::BulkString(Some(Bytes::from("libraries_count"))),
+                    RespValue::Integer(1),
+                    RespValue::BulkString(Some(Bytes::from("functions_count"))),
+                    RespValue::Integer(num_functions),
                 ])),
-            ])),
+            ]))])),
         ]))
     }
 
@@ -669,20 +665,19 @@ impl ScriptEngine {
                     );
                 }
                 let entry = store.get(&args[0]);
-                let current: i64 = match entry {
-                    Some(e) => match &e.data {
-                        valkey_storage::DataType::String(s) => {
-                            String::from_utf8_lossy(s).parse().unwrap_or(0)
-                        }
-                        _ => {
-                            return RespValue::Error(
+                let current: i64 =
+                    match entry {
+                        Some(e) => match &e.data {
+                            valkey_storage::DataType::String(s) => {
+                                String::from_utf8_lossy(s).parse().unwrap_or(0)
+                            }
+                            _ => return RespValue::Error(
                                 "WRONGTYPE Operation against a key holding the wrong kind of value"
                                     .into(),
-                            )
-                        }
-                    },
-                    None => 0,
-                };
+                            ),
+                        },
+                        None => 0,
+                    };
                 let new_val = current + 1;
                 store.set(
                     args[0].clone(),
@@ -698,20 +693,19 @@ impl ScriptEngine {
                     );
                 }
                 let entry = store.get(&args[0]);
-                let current: i64 = match entry {
-                    Some(e) => match &e.data {
-                        valkey_storage::DataType::String(s) => {
-                            String::from_utf8_lossy(s).parse().unwrap_or(0)
-                        }
-                        _ => {
-                            return RespValue::Error(
+                let current: i64 =
+                    match entry {
+                        Some(e) => match &e.data {
+                            valkey_storage::DataType::String(s) => {
+                                String::from_utf8_lossy(s).parse().unwrap_or(0)
+                            }
+                            _ => return RespValue::Error(
                                 "WRONGTYPE Operation against a key holding the wrong kind of value"
                                     .into(),
-                            )
-                        }
-                    },
-                    None => 0,
-                };
+                            ),
+                        },
+                        None => 0,
+                    };
                 let new_val = current - 1;
                 store.set(
                     args[0].clone(),
@@ -735,20 +729,19 @@ impl ScriptEngine {
                     }
                 };
                 let entry = store.get(&args[0]);
-                let current: i64 = match entry {
-                    Some(e) => match &e.data {
-                        valkey_storage::DataType::String(s) => {
-                            String::from_utf8_lossy(s).parse().unwrap_or(0)
-                        }
-                        _ => {
-                            return RespValue::Error(
+                let current: i64 =
+                    match entry {
+                        Some(e) => match &e.data {
+                            valkey_storage::DataType::String(s) => {
+                                String::from_utf8_lossy(s).parse().unwrap_or(0)
+                            }
+                            _ => return RespValue::Error(
                                 "WRONGTYPE Operation against a key holding the wrong kind of value"
                                     .into(),
-                            )
-                        }
-                    },
-                    None => 0,
-                };
+                            ),
+                        },
+                        None => 0,
+                    };
                 let new_val = current + increment;
                 store.set(
                     args[0].clone(),
@@ -772,20 +765,19 @@ impl ScriptEngine {
                     }
                 };
                 let entry = store.get(&args[0]);
-                let current: i64 = match entry {
-                    Some(e) => match &e.data {
-                        valkey_storage::DataType::String(s) => {
-                            String::from_utf8_lossy(s).parse().unwrap_or(0)
-                        }
-                        _ => {
-                            return RespValue::Error(
+                let current: i64 =
+                    match entry {
+                        Some(e) => match &e.data {
+                            valkey_storage::DataType::String(s) => {
+                                String::from_utf8_lossy(s).parse().unwrap_or(0)
+                            }
+                            _ => return RespValue::Error(
                                 "WRONGTYPE Operation against a key holding the wrong kind of value"
                                     .into(),
-                            )
-                        }
-                    },
-                    None => 0,
-                };
+                            ),
+                        },
+                        None => 0,
+                    };
                 let new_val = current - decrement;
                 store.set(
                     args[0].clone(),
@@ -838,18 +830,17 @@ impl ScriptEngine {
                     );
                 }
                 let entry = store.get(&args[0]);
-                let current = match entry {
-                    Some(e) => match &e.data {
-                        valkey_storage::DataType::String(s) => s.clone(),
-                        _ => {
-                            return RespValue::Error(
+                let current =
+                    match entry {
+                        Some(e) => match &e.data {
+                            valkey_storage::DataType::String(s) => s.clone(),
+                            _ => return RespValue::Error(
                                 "WRONGTYPE Operation against a key holding the wrong kind of value"
                                     .into(),
-                            )
-                        }
-                    },
-                    None => Bytes::new(),
-                };
+                            ),
+                        },
+                        None => Bytes::new(),
+                    };
                 let mut new_val = current.to_vec();
                 new_val.extend_from_slice(&args[1]);
                 let new_len = new_val.len() as i64;
@@ -888,9 +879,7 @@ impl ScriptEngine {
                 }
                 match store.get(&args[0]) {
                     Some(entry) => match &entry.data {
-                        valkey_storage::DataType::String(s) => {
-                            RespValue::Integer(s.len() as i64)
-                        }
+                        valkey_storage::DataType::String(s) => RespValue::Integer(s.len() as i64),
                         _ => RespValue::Error(
                             "WRONGTYPE Operation against a key holding the wrong kind of value"
                                 .into(),
@@ -1057,9 +1046,7 @@ fn glob_match(pattern: &str, text: &str) -> bool {
 /// Convert a RespValue into a Lua value for return from redis.call/pcall.
 fn lua_to_resp_value(ctx: &mlua::Lua, val: &RespValue) -> mlua::Value {
     match val {
-        RespValue::SimpleString(s) => {
-            mlua::Value::String(ctx.create_string(s.as_bytes()).unwrap())
-        }
+        RespValue::SimpleString(s) => mlua::Value::String(ctx.create_string(s.as_bytes()).unwrap()),
         RespValue::BulkString(Some(b)) => {
             mlua::Value::String(ctx.create_string(b.as_ref()).unwrap())
         }
@@ -1688,7 +1675,10 @@ mod tests {
         // Should return an error table
         match result {
             RespValue::Error(_) => {} // expected
-            _ => panic!("Expected error for write command in read-only mode, got {:?}", result),
+            _ => panic!(
+                "Expected error for write command in read-only mode, got {:?}",
+                result
+            ),
         }
 
         // GET should work in read-only mode
@@ -1719,12 +1709,7 @@ mod tests {
             None,
         );
 
-        let result = engine.evalsha_ro(
-            &sha,
-            vec![Bytes::from("shakey")],
-            vec![],
-            store.clone(),
-        );
+        let result = engine.evalsha_ro(&sha, vec![Bytes::from("shakey")], vec![], store.clone());
         assert_eq!(result, RespValue::BulkString(Some(Bytes::from("shaval"))));
     }
 
@@ -1748,12 +1733,7 @@ mod tests {
             None,
         );
 
-        let result = engine.fcall(
-            &sha,
-            vec![Bytes::from("fcallkey")],
-            vec![],
-            store.clone(),
-        );
+        let result = engine.fcall(&sha, vec![Bytes::from("fcallkey")], vec![], store.clone());
         assert_eq!(result, RespValue::BulkString(Some(Bytes::from("fcallval"))));
     }
 
@@ -1837,10 +1817,7 @@ mod tests {
 
         let code = "#!lua name=testfunc\nreturn 42";
         let result = engine.function_load(&[Bytes::from(code)]);
-        assert_eq!(
-            result,
-            RespValue::BulkString(Some(Bytes::from("testfunc")))
-        );
+        assert_eq!(result, RespValue::BulkString(Some(Bytes::from("testfunc"))));
     }
 
     #[tokio::test]

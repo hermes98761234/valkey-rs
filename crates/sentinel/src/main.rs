@@ -11,9 +11,10 @@ async fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().collect();
 
     // Usage: valkey-sentinel [sentinel.conf]
-    let config_path = args.get(1).map(PathBuf::from).unwrap_or_else(|| {
-        PathBuf::from("sentinel.conf")
-    });
+    let config_path = args
+        .get(1)
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("sentinel.conf"));
 
     info!("Loading sentinel config from: {}", config_path.display());
 

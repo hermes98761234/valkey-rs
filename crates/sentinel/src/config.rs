@@ -123,11 +123,10 @@ impl SentinelConfig {
                                 line: line_num,
                                 msg: format!("invalid port: {}", parts[4]),
                             })?;
-                            let quorum: u32 =
-                                parts[5].parse().map_err(|_| ConfigError::Parse {
-                                    line: line_num,
-                                    msg: format!("invalid quorum: {}", parts[5]),
-                                })?;
+                            let quorum: u32 = parts[5].parse().map_err(|_| ConfigError::Parse {
+                                line: line_num,
+                                msg: format!("invalid quorum: {}", parts[5]),
+                            })?;
                             current_monitor = Some(MonitorConfig {
                                 name,
                                 host,
@@ -189,7 +188,10 @@ impl SentinelConfig {
                         }
 
                         _ => {
-                            warn!("line {}: unknown sentinel subcommand '{}'", line_num, parts[1]);
+                            warn!(
+                                "line {}: unknown sentinel subcommand '{}'",
+                                line_num, parts[1]
+                            );
                         }
                     }
                 }

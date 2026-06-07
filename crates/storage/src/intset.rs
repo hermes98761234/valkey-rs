@@ -155,14 +155,12 @@ impl IntSet {
             IntSetEncoding::Int16 => {
                 i16::from_le_bytes([self.data[offset], self.data[offset + 1]]) as i64
             }
-            IntSetEncoding::Int32 => {
-                i32::from_le_bytes([
-                    self.data[offset],
-                    self.data[offset + 1],
-                    self.data[offset + 2],
-                    self.data[offset + 3],
-                ]) as i64
-            }
+            IntSetEncoding::Int32 => i32::from_le_bytes([
+                self.data[offset],
+                self.data[offset + 1],
+                self.data[offset + 2],
+                self.data[offset + 3],
+            ]) as i64,
             IntSetEncoding::Int64 => i64::from_le_bytes([
                 self.data[offset],
                 self.data[offset + 1],

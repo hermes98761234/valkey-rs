@@ -395,10 +395,7 @@ mod integration_tests {
         let resp = cluster.handler_a.handle("SETSLOT", &args);
         assert_eq!(resp, "+OK\r\n");
         assert!(cluster.node_a_state.is_migrating(slot).is_some());
-        assert_eq!(
-            cluster.node_a_state.is_migrating(slot).unwrap(),
-            b_id
-        );
+        assert_eq!(cluster.node_a_state.is_migrating(slot).unwrap(), b_id);
 
         // Step 1b: Mark slot 100 as IMPORTING on node B (destination)
         let args = vec![
@@ -409,10 +406,7 @@ mod integration_tests {
         let resp = cluster.handler_b.handle("SETSLOT", &args);
         assert_eq!(resp, "+OK\r\n");
         assert!(cluster.node_b_state.is_importing(slot).is_some());
-        assert_eq!(
-            cluster.node_b_state.is_importing(slot).unwrap(),
-            a_id
-        );
+        assert_eq!(cluster.node_b_state.is_importing(slot).unwrap(), a_id);
 
         // Step 2: Verify ASK redirect on source (node A) for migrating slot
         let ask_redirect = cluster.router_a.ask_redirect(slot);

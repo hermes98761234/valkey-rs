@@ -583,7 +583,11 @@ async fn replay_command(store: &Arc<Store>, cmd: &[Bytes]) -> Result<(), String>
                 },
                 None => args[1].to_vec(),
             };
-            store.set(args[0].clone(), DataType::String(Bytes::from(new_val)), None);
+            store.set(
+                args[0].clone(),
+                DataType::String(Bytes::from(new_val)),
+                None,
+            );
         }
         "INCR" => {
             if args.is_empty() {
@@ -603,7 +607,11 @@ async fn replay_command(store: &Arc<Store>, cmd: &[Bytes]) -> Result<(), String>
                 },
                 None => "1".to_string(),
             };
-            store.set(args[0].clone(), DataType::String(Bytes::from(new_val)), None);
+            store.set(
+                args[0].clone(),
+                DataType::String(Bytes::from(new_val)),
+                None,
+            );
         }
         "DECR" => {
             if args.is_empty() {
@@ -623,7 +631,11 @@ async fn replay_command(store: &Arc<Store>, cmd: &[Bytes]) -> Result<(), String>
                 },
                 None => "-1".to_string(),
             };
-            store.set(args[0].clone(), DataType::String(Bytes::from(new_val)), None);
+            store.set(
+                args[0].clone(),
+                DataType::String(Bytes::from(new_val)),
+                None,
+            );
         }
         "INCRBY" => {
             if args.len() < 2 {
@@ -647,7 +659,11 @@ async fn replay_command(store: &Arc<Store>, cmd: &[Bytes]) -> Result<(), String>
                 },
                 None => incr.to_string(),
             };
-            store.set(args[0].clone(), DataType::String(Bytes::from(new_val)), None);
+            store.set(
+                args[0].clone(),
+                DataType::String(Bytes::from(new_val)),
+                None,
+            );
         }
         "DECRBY" => {
             if args.len() < 2 {
@@ -671,7 +687,11 @@ async fn replay_command(store: &Arc<Store>, cmd: &[Bytes]) -> Result<(), String>
                 },
                 None => (-decr).to_string(),
             };
-            store.set(args[0].clone(), DataType::String(Bytes::from(new_val)), None);
+            store.set(
+                args[0].clone(),
+                DataType::String(Bytes::from(new_val)),
+                None,
+            );
         }
         "DEL" | "UNLINK" => {
             for arg in args {

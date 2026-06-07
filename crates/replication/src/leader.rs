@@ -388,13 +388,8 @@ impl ReplicationManager {
         self.replicas
             .retain(|_, replica| replica.active.load(Ordering::Relaxed));
         // Clean up ack offsets for removed replicas
-        let active_ids: Vec<u64> = self
-            .replicas
-            .iter()
-            .map(|e| *e.key())
-            .collect();
-        self.ack_offsets
-            .retain(|id, _| active_ids.contains(id));
+        let active_ids: Vec<u64> = self.replicas.iter().map(|e| *e.key()).collect();
+        self.ack_offsets.retain(|id, _| active_ids.contains(id));
     }
 
     /// Mark a replica as disconnected.

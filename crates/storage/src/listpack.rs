@@ -169,21 +169,13 @@ fn decode_string(buf: &[u8], pos: usize) -> Option<(Bytes, usize)> {
         if pos + 3 > buf.len() {
             return None;
         }
-        (
-            u16::from_le_bytes([buf[pos + 1], buf[pos + 2]]) as usize,
-            3,
-        )
+        (u16::from_le_bytes([buf[pos + 1], buf[pos + 2]]) as usize, 3)
     } else if first == 0xF2 {
         if pos + 5 > buf.len() {
             return None;
         }
         (
-            u32::from_le_bytes([
-                buf[pos + 1],
-                buf[pos + 2],
-                buf[pos + 3],
-                buf[pos + 4],
-            ]) as usize,
+            u32::from_le_bytes([buf[pos + 1], buf[pos + 2], buf[pos + 3], buf[pos + 4]]) as usize,
             5,
         )
     } else if first == 0xF3 {
@@ -386,7 +378,11 @@ impl ListPack {
     }
 
     fn prevlen_size(len: usize) -> usize {
-        if len < 128 { 1 } else { 5 }
+        if len < 128 {
+            1
+        } else {
+            5
+        }
     }
 
     // -----------------------------------------------------------------------

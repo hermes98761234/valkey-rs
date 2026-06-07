@@ -12,9 +12,7 @@ use valkey_storage::Store;
 /// which is handled via the cluster router at a higher level.
 pub async fn handle(args: &[Bytes], store: &Store) -> RespValue {
     if args.len() < 5 {
-        return RespValue::Error(
-            "ERR wrong number of arguments for 'MIGRATE' command".into(),
-        );
+        return RespValue::Error("ERR wrong number of arguments for 'MIGRATE' command".into());
     }
 
     let _host = match std::str::from_utf8(&args[0]) {
@@ -53,9 +51,7 @@ pub async fn handle(args: &[Bytes], store: &Store) -> RespValue {
                 }
             }
             _ => {
-                return RespValue::Error(
-                    format!("ERR unknown MIGRATE option '{}'", arg).into(),
-                );
+                return RespValue::Error(format!("ERR unknown MIGRATE option '{}'", arg).into());
             }
         }
         i += 1;

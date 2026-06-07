@@ -303,9 +303,9 @@ fn is_write_command(cmd: &[Bytes]) -> bool {
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
 
-        let addr = "0.0.0.0:6379";
-        let listener = TcpListener::bind(addr).await?;
-        info!("valkey-rs listening on {addr}");
+    let addr = "0.0.0.0:6379";
+    let listener = TcpListener::bind(addr).await?;
+    info!("valkey-rs listening on {addr}");
 
     let store = Store::new();
 

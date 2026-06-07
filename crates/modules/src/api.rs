@@ -28,7 +28,9 @@ pub fn get_registered_command(name: &str) -> Option<RedisModuleCmdFunc> {
 // ---------------------------------------------------------------------------
 
 pub struct ModuleCtxInner {
+    #[allow(dead_code)]
     pub store: Arc<Store>,
+    #[allow(dead_code)]
     pub args: Vec<Bytes>,
 
     // Registration state (used during MODULE LOAD)
@@ -162,7 +164,7 @@ pub unsafe extern "C" fn RedisModule_ReplyWithBulkString(
     if ctx_ptr.is_null() || buf.is_null() {
         return REDISMODULE_ERR;
     }
-    let slice = std::slice::from_raw_parts(buf as *const u8, len);
+    let slice = std::slice::from_raw_parts(buf, len);
     let bytes = Bytes::copy_from_slice(slice);
     let ctx = ctx(ctx_ptr);
     ctx.push_reply(RespValue::BulkString(Some(bytes)));
@@ -192,7 +194,8 @@ pub unsafe extern "C" fn RedisModule_ReplyWithArray(
     }
     let ctx = ctx(ctx_ptr);
     // Push a new array accumulator
-    ctx.array_stack.push(Vec::with_capacity(len.max(0) as usize));
+    ctx.array_stack
+        .push(Vec::with_capacity(len.max(0) as usize));
     REDISMODULE_OK
 }
 
@@ -200,7 +203,7 @@ pub unsafe extern "C" fn RedisModule_ReplyWithArray(
 #[no_mangle]
 pub unsafe extern "C" fn RedisModule_ReplySetArrayLength(
     ctx_ptr: *mut RedisModuleCtx,
-    len: c_longlong,
+    _len: c_longlong,
 ) -> c_int {
     if ctx_ptr.is_null() {
         return REDISMODULE_ERR;
@@ -309,7 +312,7 @@ pub unsafe extern "C" fn RedisModule_AutoMemory(_ctx: *mut RedisModuleCtx) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn RedisModule_GetSelectedDb(ctx_ptr: *mut RedisModuleCtx) -> c_int {
+pub unsafe extern "C" fn RedisModule_GetSelectedDb(_ctx_ptr: *mut RedisModuleCtx) -> c_int {
     0 // We don't support multiple DBs in this implementation
 }
 

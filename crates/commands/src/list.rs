@@ -129,10 +129,12 @@ async fn lpo(a: &[Bytes], s: &Arc<Store>) -> RespValue {
         Some(mut e) => {
             let l = match e.data.as_list_mut() {
                 Some(l) => l,
-                None => return RespValue::Error(
-                    "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
-                ),
-                };
+                None => {
+                    return RespValue::Error(
+                        "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
+                    )
+                }
+            };
             if l.is_empty() {
                 return RespValue::BulkString(None);
             }
@@ -189,10 +191,12 @@ async fn rpo(a: &[Bytes], s: &Arc<Store>) -> RespValue {
         Some(mut e) => {
             let l = match e.data.as_list_mut() {
                 Some(l) => l,
-                None => return RespValue::Error(
-                    "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
-                ),
-                };
+                None => {
+                    return RespValue::Error(
+                        "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
+                    )
+                }
+            };
             if l.is_empty() {
                 return RespValue::BulkString(None);
             }
@@ -246,16 +250,17 @@ async fn lr(a: &[Bytes], s: &Arc<Store>) -> RespValue {
         None => return RespValue::Error("ERR value is not an integer or out of range".into()),
     };
     match s.keyspace.get(&a[0]) {
-        Some(e) => {
-            match e.data.list_range(st, sp) {
-                Some(items) => RespValue::Array(Some(
-                    items.into_iter().map(|v| RespValue::BulkString(Some(v))).collect(),
-                )),
-                None => RespValue::Error(
-                    "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
-                ),
-            }
-        }
+        Some(e) => match e.data.list_range(st, sp) {
+            Some(items) => RespValue::Array(Some(
+                items
+                    .into_iter()
+                    .map(|v| RespValue::BulkString(Some(v)))
+                    .collect(),
+            )),
+            None => RespValue::Error(
+                "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
+            ),
+        },
         None => RespValue::Array(Some(Vec::new())),
     }
 }
@@ -290,15 +295,13 @@ async fn li(a: &[Bytes], s: &Arc<Store>) -> RespValue {
         None => return RespValue::Error("ERR value is not an integer or out of range".into()),
     };
     match s.keyspace.get(&a[0]) {
-        Some(e) => {
-            match e.data.list_get(idx) {
-                Some(v) => RespValue::BulkString(Some(v)),
-                None if e.data.is_list_type() => RespValue::BulkString(None),
-                None => RespValue::Error(
-                    "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
-                ),
-            }
-        }
+        Some(e) => match e.data.list_get(idx) {
+            Some(v) => RespValue::BulkString(Some(v)),
+            None if e.data.is_list_type() => RespValue::BulkString(None),
+            None => RespValue::Error(
+                "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
+            ),
+        },
         None => RespValue::BulkString(None),
     }
 }
@@ -318,10 +321,12 @@ async fn ls(a: &[Bytes], s: &Arc<Store>) -> RespValue {
         Some(mut e) => {
             let l = match e.data.as_list_mut() {
                 Some(l) => l,
-                None => return RespValue::Error(
-                    "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
-                ),
-                };
+                None => {
+                    return RespValue::Error(
+                        "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
+                    )
+                }
+            };
             let len = l.len() as i64;
             let i = ni(idx, len);
             if i < 0 || i >= len {
@@ -354,10 +359,12 @@ async fn lins(a: &[Bytes], s: &Arc<Store>) -> RespValue {
         Some(mut e) => {
             let l = match e.data.as_list_mut() {
                 Some(l) => l,
-                None => return RespValue::Error(
-                    "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
-                ),
-                };
+                None => {
+                    return RespValue::Error(
+                        "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
+                    )
+                }
+            };
             match l.iter().position(|v| v == &a[2]) {
                 Some(p) => {
                     let ip = if before { p } else { p + 1 };
@@ -386,10 +393,12 @@ async fn lre(a: &[Bytes], s: &Arc<Store>) -> RespValue {
         Some(mut e) => {
             let l = match e.data.as_list_mut() {
                 Some(l) => l,
-                None => return RespValue::Error(
-                    "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
-                ),
-                };
+                None => {
+                    return RespValue::Error(
+                        "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
+                    )
+                }
+            };
             let lb = l.len();
             if c > 0 {
                 let mut rm = c;
@@ -445,10 +454,12 @@ async fn ltr(a: &[Bytes], s: &Arc<Store>) -> RespValue {
         Some(mut e) => {
             let l = match e.data.as_list_mut() {
                 Some(l) => l,
-                None => return RespValue::Error(
-                    "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
-                ),
-                };
+                None => {
+                    return RespValue::Error(
+                        "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
+                    )
+                }
+            };
             if l.is_empty() {
                 return RespValue::SimpleString("OK".into());
             }
@@ -499,10 +510,12 @@ async fn lmo(a: &[Bytes], s: &Arc<Store>) -> RespValue {
         Some(mut e) => {
             let l = match e.data.as_list_mut() {
                 Some(l) => l,
-                None => return RespValue::Error(
-                    "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
-                ),
-                };
+                None => {
+                    return RespValue::Error(
+                        "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
+                    )
+                }
+            };
             if l.is_empty() {
                 None
             } else {
@@ -528,10 +541,12 @@ async fn lmo(a: &[Bytes], s: &Arc<Store>) -> RespValue {
                 .or_insert_with(|| Entry::new(DataType::ListPack(ListPack::new()), None));
             let l = match e.data.as_list_mut() {
                 Some(l) => l,
-                None => return RespValue::Error(
-                    "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
-                ),
-                };
+                None => {
+                    return RespValue::Error(
+                        "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
+                    )
+                }
+            };
             if tl {
                 l.push_front(val.clone());
             } else {
@@ -561,8 +576,10 @@ async fn bl(a: &[Bytes], s: &Arc<Store>) -> RespValue {
     for key in keys {
         match s.keyspace.get_mut(key) {
             Some(mut e) => {
-                if !e.data.is_list_type() { continue; }
-                    let l = e.data.as_list_mut().unwrap();
+                if !e.data.is_list_type() {
+                    continue;
+                }
+                let l = e.data.as_list_mut().unwrap();
                 if !l.is_empty() {
                     let v = l.pop_front().unwrap();
                     if l.is_empty() {
@@ -605,8 +622,10 @@ async fn blpop_block_forever(keys: &[Bytes], s: &Arc<Store>) -> RespValue {
         for (key, _) in &receivers {
             match s.keyspace.get_mut(key) {
                 Some(mut e) => {
-                    if !e.data.is_list_type() { continue; }
-                        let l = e.data.as_list_mut().unwrap();
+                    if !e.data.is_list_type() {
+                        continue;
+                    }
+                    let l = e.data.as_list_mut().unwrap();
                     if !l.is_empty() {
                         let v = l.pop_front().unwrap();
                         if l.is_empty() {
@@ -655,8 +674,10 @@ async fn br(a: &[Bytes], s: &Arc<Store>) -> RespValue {
     for key in keys {
         match s.keyspace.get_mut(key) {
             Some(mut e) => {
-                if !e.data.is_list_type() { continue; }
-                    let l = e.data.as_list_mut().unwrap();
+                if !e.data.is_list_type() {
+                    continue;
+                }
+                let l = e.data.as_list_mut().unwrap();
                 if !l.is_empty() {
                     let v = l.pop_back().unwrap();
                     if l.is_empty() {
@@ -699,8 +720,10 @@ async fn brpop_block_forever(keys: &[Bytes], s: &Arc<Store>) -> RespValue {
         for (key, _) in &receivers {
             match s.keyspace.get_mut(key) {
                 Some(mut e) => {
-                    if !e.data.is_list_type() { continue; }
-                        let l = e.data.as_list_mut().unwrap();
+                    if !e.data.is_list_type() {
+                        continue;
+                    }
+                    let l = e.data.as_list_mut().unwrap();
                     if !l.is_empty() {
                         let v = l.pop_back().unwrap();
                         if l.is_empty() {
@@ -861,9 +884,7 @@ async fn lpos(a: &[Bytes], s: &Arc<Store>) -> RespValue {
     } else if count == 1 {
         RespValue::Integer(found[0])
     } else {
-        RespValue::Array(Some(
-            found.into_iter().map(RespValue::Integer).collect(),
-        ))
+        RespValue::Array(Some(found.into_iter().map(RespValue::Integer).collect()))
     }
 }
 
@@ -877,17 +898,11 @@ async fn lmpop(a: &[Bytes], s: &Arc<Store>) -> RespValue {
 
     let num_keys = match pu(&a[0]) {
         Some(n) => n,
-        None => {
-            return RespValue::Error(
-                "ERR value is not an integer or out of range".into(),
-            )
-        }
+        None => return RespValue::Error("ERR value is not an integer or out of range".into()),
     };
 
     if num_keys == 0 {
-        return RespValue::Error(
-            "ERR value is not an integer or out of range".into(),
-        )
+        return RespValue::Error("ERR value is not an integer or out of range".into());
     };
 
     if a.len() < 2 + num_keys {
@@ -919,9 +934,7 @@ async fn lmpop(a: &[Bytes], s: &Arc<Store>) -> RespValue {
             count = match pu(&a[3 + num_keys]) {
                 Some(n) => Some(n),
                 None => {
-                    return RespValue::Error(
-                        "ERR value is not an integer or out of range".into(),
-                    )
+                    return RespValue::Error("ERR value is not an integer or out of range".into())
                 }
             };
         } else {
@@ -933,8 +946,10 @@ async fn lmpop(a: &[Bytes], s: &Arc<Store>) -> RespValue {
     for key in keys {
         match s.keyspace.get_mut(key) {
             Some(mut e) => {
-                if !e.data.is_list_type() { continue; }
-                    let l = e.data.as_list_mut().unwrap();
+                if !e.data.is_list_type() {
+                    continue;
+                }
+                let l = e.data.as_list_mut().unwrap();
                 if !l.is_empty() {
                     let pop_count = count.unwrap_or(1).min(l.len());
                     let mut popped = Vec::with_capacity(pop_count);
@@ -978,17 +993,11 @@ async fn blmpop(a: &[Bytes], s: &Arc<Store>) -> RespValue {
 
     let num_keys = match pu(&a[1]) {
         Some(n) => n,
-        None => {
-            return RespValue::Error(
-                "ERR value is not an integer or out of range".into(),
-            )
-        }
+        None => return RespValue::Error("ERR value is not an integer or out of range".into()),
     };
 
     if num_keys == 0 {
-        return RespValue::Error(
-            "ERR value is not an integer or out of range".into(),
-        )
+        return RespValue::Error("ERR value is not an integer or out of range".into());
     };
 
     if a.len() < 3 + num_keys {
@@ -1020,9 +1029,7 @@ async fn blmpop(a: &[Bytes], s: &Arc<Store>) -> RespValue {
             count = match pu(&a[4 + num_keys]) {
                 Some(n) => Some(n),
                 None => {
-                    return RespValue::Error(
-                        "ERR value is not an integer or out of range".into(),
-                    )
+                    return RespValue::Error("ERR value is not an integer or out of range".into())
                 }
             };
         } else {
@@ -1034,8 +1041,10 @@ async fn blmpop(a: &[Bytes], s: &Arc<Store>) -> RespValue {
     for key in keys {
         match s.keyspace.get_mut(key) {
             Some(mut e) => {
-                if !e.data.is_list_type() { continue; }
-                    let l = e.data.as_list_mut().unwrap();
+                if !e.data.is_list_type() {
+                    continue;
+                }
+                let l = e.data.as_list_mut().unwrap();
                 if !l.is_empty() {
                     let pop_count = count.unwrap_or(1).min(l.len());
                     let mut popped = Vec::with_capacity(pop_count);
@@ -1068,8 +1077,7 @@ async fn blmpop(a: &[Bytes], s: &Arc<Store>) -> RespValue {
 
     // Blocking path with timeout
     let dur = Duration::from_secs_f64(timeout);
-    let result =
-        tokio::time::timeout(dur, blmpop_block_forever(keys, direction, count, s)).await;
+    let result = tokio::time::timeout(dur, blmpop_block_forever(keys, direction, count, s)).await;
     match result {
         Ok(v) => v,
         Err(_) => RespValue::BulkString(None),
@@ -1091,8 +1099,10 @@ async fn blmpop_block_forever(
         for (key, _) in &receivers {
             match s.keyspace.get_mut(key) {
                 Some(mut e) => {
-                    if !e.data.is_list_type() { continue; }
-                        let l = e.data.as_list_mut().unwrap();
+                    if !e.data.is_list_type() {
+                        continue;
+                    }
+                    let l = e.data.as_list_mut().unwrap();
                     if !l.is_empty() {
                         let pop_count = count.unwrap_or(1).min(l.len());
                         let mut popped = Vec::with_capacity(pop_count);
@@ -1170,10 +1180,12 @@ async fn blmove(a: &[Bytes], s: &Arc<Store>) -> RespValue {
         Some(mut e) => {
             let l = match e.data.as_list_mut() {
                 Some(l) => l,
-                None => return RespValue::Error(
-                    "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
-                ),
-                };
+                None => {
+                    return RespValue::Error(
+                        "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
+                    )
+                }
+            };
             if l.is_empty() {
                 None
             } else {
@@ -1204,9 +1216,11 @@ async fn blmove(a: &[Bytes], s: &Arc<Store>) -> RespValue {
 
     // Blocking path with timeout
     let dur = Duration::from_secs_f64(timeout);
-    let result =
-        tokio::time::timeout(dur, blmove_block_forever(source, destination, from_dir, to_dir, s))
-            .await;
+    let result = tokio::time::timeout(
+        dur,
+        blmove_block_forever(source, destination, from_dir, to_dir, s),
+    )
+    .await;
     match result {
         Ok(v) => v,
         Err(_) => RespValue::BulkString(None),
@@ -1446,11 +1460,7 @@ mod tests {
         let s = ts();
         handle(&[b("RPUSH"), b("L"), b("a"), b("c")], &s).await;
         assert_eq!(
-            handle(
-                &[b("LINSERT"), b("L"), b("BEFORE"), b("c"), b("b")],
-                &s
-            )
-            .await,
+            handle(&[b("LINSERT"), b("L"), b("BEFORE"), b("c"), b("b")], &s).await,
             RespValue::Integer(3)
         );
     }
@@ -1460,11 +1470,7 @@ mod tests {
         let s = ts();
         handle(&[b("RPUSH"), b("L"), b("a"), b("c")], &s).await;
         assert_eq!(
-            handle(
-                &[b("LINSERT"), b("L"), b("AFTER"), b("c"), b("b")],
-                &s
-            )
-            .await,
+            handle(&[b("LINSERT"), b("L"), b("AFTER"), b("c"), b("b")], &s).await,
             RespValue::Integer(3)
         );
     }
@@ -1474,11 +1480,7 @@ mod tests {
         let s = ts();
         handle(&[b("RPUSH"), b("L"), b("a")], &s).await;
         assert_eq!(
-            handle(
-                &[b("LINSERT"), b("L"), b("BEFORE"), b("z"), b("x")],
-                &s
-            )
-            .await,
+            handle(&[b("LINSERT"), b("L"), b("BEFORE"), b("z"), b("x")], &s).await,
             RespValue::Integer(-1)
         );
     }
@@ -1506,11 +1508,7 @@ mod tests {
     #[tokio::test]
     async fn t_ltrim() {
         let s = ts();
-        handle(
-            &[b("RPUSH"), b("L"), b("a"), b("b"), b("c"), b("d")],
-            &s,
-        )
-        .await;
+        handle(&[b("RPUSH"), b("L"), b("a"), b("b"), b("c"), b("d")], &s).await;
         handle(&[b("LTRIM"), b("L"), b("1"), b("2")], &s).await;
         assert_eq!(
             handle(&[b("LRANGE"), b("L"), b("0"), b("-1")], &s).await,
@@ -1526,11 +1524,7 @@ mod tests {
         let s = ts();
         handle(&[b("RPUSH"), b("src"), b("a"), b("b")], &s).await;
         assert_eq!(
-            handle(
-                &[b("LMOVE"), b("src"), b("dst"), b("LEFT"), b("RIGHT")],
-                &s
-            )
-            .await,
+            handle(&[b("LMOVE"), b("src"), b("dst"), b("LEFT"), b("RIGHT")], &s).await,
             RespValue::BulkString(Some(b("a")))
         );
     }
@@ -1539,11 +1533,7 @@ mod tests {
     async fn t_lmove_none() {
         let s = ts();
         assert_eq!(
-            handle(
-                &[b("LMOVE"), b("n"), b("d"), b("LEFT"), b("RIGHT")],
-                &s
-            )
-            .await,
+            handle(&[b("LMOVE"), b("n"), b("d"), b("LEFT"), b("RIGHT")], &s).await,
             RespValue::BulkString(None)
         );
     }
@@ -1636,11 +1626,7 @@ mod tests {
     async fn t_rotate() {
         let s = ts();
         handle(&[b("RPUSH"), b("L"), b("a"), b("b"), b("c")], &s).await;
-        handle(
-            &[b("LMOVE"), b("L"), b("L"), b("RIGHT"), b("LEFT")],
-            &s,
-        )
-        .await;
+        handle(&[b("LMOVE"), b("L"), b("L"), b("RIGHT"), b("LEFT")], &s).await;
         assert_eq!(
             handle(&[b("LRANGE"), b("L"), b("0"), b("-1")], &s).await,
             RespValue::Array(Some(vec![
@@ -1656,11 +1642,7 @@ mod tests {
     #[tokio::test]
     async fn t_lpos_basic() {
         let s = ts();
-        handle(
-            &[b("RPUSH"), b("L"), b("a"), b("b"), b("c"), b("b")],
-            &s,
-        )
-        .await;
+        handle(&[b("RPUSH"), b("L"), b("a"), b("b"), b("c"), b("b")], &s).await;
         assert_eq!(
             handle(&[b("LPOS"), b("L"), b("b")], &s).await,
             RespValue::Integer(1)
@@ -1763,11 +1745,7 @@ mod tests {
     async fn t_lmpop_multi_key() {
         let s = ts();
         handle(&[b("RPUSH"), b("k2"), b("x")], &s).await;
-        let result = handle(
-            &[b("LMPOP"), b("2"), b("LEFT"), b("k1"), b("k2")],
-            &s,
-        )
-        .await;
+        let result = handle(&[b("LMPOP"), b("2"), b("LEFT"), b("k1"), b("k2")], &s).await;
         assert_eq!(
             result,
             RespValue::Array(Some(vec![
@@ -1783,11 +1761,7 @@ mod tests {
     async fn t_blmpop_immediate() {
         let s = ts();
         handle(&[b("RPUSH"), b("k1"), b("a"), b("b")], &s).await;
-        let result = handle(
-            &[b("BLMPOP"), b("0.5"), b("1"), b("LEFT"), b("k1")],
-            &s,
-        )
-        .await;
+        let result = handle(&[b("BLMPOP"), b("0.5"), b("1"), b("LEFT"), b("k1")], &s).await;
         assert_eq!(
             result,
             RespValue::Array(Some(vec![
@@ -1801,11 +1775,7 @@ mod tests {
     async fn t_blmpop_timeout() {
         let s = ts();
         let start = std::time::Instant::now();
-        let result = handle(
-            &[b("BLMPOP"), b("0.5"), b("1"), b("LEFT"), b("empty")],
-            &s,
-        )
-        .await;
+        let result = handle(&[b("BLMPOP"), b("0.5"), b("1"), b("LEFT"), b("empty")], &s).await;
         let elapsed = start.elapsed();
         assert_eq!(result, RespValue::BulkString(None));
         assert!(elapsed.as_millis() >= 400);

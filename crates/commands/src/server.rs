@@ -175,10 +175,7 @@ impl TrackingState {
     }
 
     /// Update this tracking state from CLIENT TRACKING ON arguments.
-    pub fn enable_from_args(
-        &mut self,
-        args: &[Bytes],
-    ) -> Result<(), String> {
+    pub fn enable_from_args(&mut self, args: &[Bytes]) -> Result<(), String> {
         self.enabled = true;
         // Reset mode to defaults first
         self.mode = TrackingMode::Default;
@@ -1183,7 +1180,9 @@ async fn cmd_command_list(_args: &[Bytes]) -> RespValue {
 /// Extract keys from a command by looking up its descriptor and computing key positions.
 async fn cmd_command_getkeys(args: &[Bytes]) -> RespValue {
     if args.is_empty() {
-        return RespValue::Error("ERR wrong number of arguments for 'command|getkeys' command".into());
+        return RespValue::Error(
+            "ERR wrong number of arguments for 'command|getkeys' command".into(),
+        );
     }
     let cmd_name = match std::str::from_utf8(&args[0]) {
         Ok(s) => s.to_ascii_uppercase(),
@@ -1202,12 +1201,24 @@ async fn cmd_command_getkeys(args: &[Bytes]) -> RespValue {
         let last = if desc.last_key < 0 {
             // Negative last_key means: last key is at position (len + last_key + 1)
             let pos = cmd_args.len() as i64 + desc.last_key + 1;
-            if pos < 1 { first } else { (pos - 1) as usize }
+            if pos < 1 {
+                first
+            } else {
+                (pos - 1) as usize
+            }
         } else {
             let last = (desc.last_key - 1) as usize;
-            if last >= cmd_args.len() { cmd_args.len() - 1 } else { last }
+            if last >= cmd_args.len() {
+                cmd_args.len() - 1
+            } else {
+                last
+            }
         };
-        let step = if desc.key_step > 0 { desc.key_step as usize } else { 1 };
+        let step = if desc.key_step > 0 {
+            desc.key_step as usize
+        } else {
+            1
+        };
         let mut idx = first;
         while idx <= last && idx < cmd_args.len() {
             keys.push(RespValue::bulk(cmd_args[idx].clone()));
@@ -1999,9 +2010,7 @@ async fn cmd_config_rewrite(args: &[Bytes], config: Arc<RwLock<ServerConfig>>) -
         match &cfg.config_file_path {
             Some(p) => p.clone(),
             None => {
-                return RespValue::Error(
-                    "ERR The server is running without a config file".into(),
-                );
+                return RespValue::Error("ERR The server is running without a config file".into());
             }
         }
     };
@@ -2141,9 +2150,7 @@ async fn cmd_bgrewriteaof(
     config: Arc<RwLock<ServerConfig>>,
 ) -> RespValue {
     if !args.is_empty() {
-        return RespValue::Error(
-            "ERR wrong number of arguments for 'bgrewriteaof' command".into(),
-        );
+        return RespValue::Error("ERR wrong number of arguments for 'bgrewriteaof' command".into());
     }
     let aof_path = config.read().unwrap().aof_path.clone();
     if aof_path.is_empty() {
@@ -2255,17 +2262,19 @@ async fn cmd_memory(args: &[Bytes], store: &Arc<Store>) -> RespValue {
                           Try calling DOCTOR again when you have a real issue.";
             RespValue::bulk(Bytes::from(report))
         }
-        "MALLOC-STATS" => {
-            RespValue::bulk(Bytes::from(
-                "jemalloc statistics not available in valkey-rs",
-            ))
-        }
+        "MALLOC-STATS" => RespValue::bulk(Bytes::from(
+            "jemalloc statistics not available in valkey-rs",
+        )),
         "PURGE" => RespValue::ok(),
         "STATS" => {
             // Return memory statistics as a structured array
             let used_memory = store.memory_usage_bytes() as i64;
             let overhead = 524288i64; // base overhead estimate
-            let dataset = if used_memory > overhead { used_memory - overhead } else { 0 };
+            let dataset = if used_memory > overhead {
+                used_memory - overhead
+            } else {
+                0
+            };
 
             RespValue::array(vec![
                 RespValue::bulk(Bytes::from("peak.allocated")),
@@ -2295,11 +2304,19 @@ async fn cmd_memory(args: &[Bytes], store: &Arc<Store>) -> RespValue {
                 RespValue::bulk(Bytes::from("keys.count")),
                 RespValue::Integer(store.dbsize() as i64),
                 RespValue::bulk(Bytes::from("keys.bytes-per-key")),
-                RespValue::Integer(if store.dbsize() > 0 { dataset / store.dbsize() as i64 } else { 0 }),
+                RespValue::Integer(if store.dbsize() > 0 {
+                    dataset / store.dbsize() as i64
+                } else {
+                    0
+                }),
                 RespValue::bulk(Bytes::from("dataset.bytes")),
                 RespValue::Integer(dataset),
                 RespValue::bulk(Bytes::from("dataset.percentage")),
-                RespValue::Double(if used_memory > 0 { (dataset as f64 / used_memory as f64) * 100.0 } else { 0.0 }),
+                RespValue::Double(if used_memory > 0 {
+                    (dataset as f64 / used_memory as f64) * 100.0
+                } else {
+                    0.0
+                }),
                 RespValue::bulk(Bytes::from("peak.percentage")),
                 RespValue::Double(100.0),
                 RespValue::bulk(Bytes::from("allocator.allocated")),
@@ -2328,7 +2345,9 @@ async fn cmd_memory(args: &[Bytes], store: &Arc<Store>) -> RespValue {
         }
         "HELP" => RespValue::array(vec![
             RespValue::bulk(Bytes::from("USAGE <key>")),
-            RespValue::bulk(Bytes::from("Returns the memory usage of a key and its value.")),
+            RespValue::bulk(Bytes::from(
+                "Returns the memory usage of a key and its value.",
+            )),
             RespValue::bulk(Bytes::from("DOCTOR")),
             RespValue::bulk(Bytes::from("Return memory problems report.")),
             RespValue::bulk(Bytes::from("STATS")),
@@ -2538,9 +2557,7 @@ async fn cmd_client_caching(args: &[Bytes], client: Arc<RwLock<ClientCtx>>) -> R
             ctx.tracking.caching = false;
             RespValue::ok()
         }
-        _ => RespValue::Error(
-            "ERR CLIENT CACHING option must be either YES or NO".into(),
-        ),
+        _ => RespValue::Error("ERR CLIENT CACHING option must be either YES or NO".into()),
     }
 }
 
@@ -3503,43 +3520,23 @@ mod tests {
         let client = Arc::new(RwLock::new(ClientCtx::new()));
 
         // Initially tracking is off
-        let resp = cmd_client_tracking(
-            &[Bytes::from("STATUS")],
-            Arc::clone(&client),
-        )
-        .await;
+        let resp = cmd_client_tracking(&[Bytes::from("STATUS")], Arc::clone(&client)).await;
         assert_eq!(resp, RespValue::SimpleString("off".into()));
 
         // Enable tracking
-        let resp = cmd_client_tracking(
-            &[Bytes::from("ON")],
-            Arc::clone(&client),
-        )
-        .await;
+        let resp = cmd_client_tracking(&[Bytes::from("ON")], Arc::clone(&client)).await;
         assert_eq!(resp, RespValue::ok());
 
         // Now status should be on
-        let resp = cmd_client_tracking(
-            &[Bytes::from("STATUS")],
-            Arc::clone(&client),
-        )
-        .await;
+        let resp = cmd_client_tracking(&[Bytes::from("STATUS")], Arc::clone(&client)).await;
         assert_eq!(resp, RespValue::SimpleString("on".into()));
 
         // Disable tracking
-        let resp = cmd_client_tracking(
-            &[Bytes::from("OFF")],
-            Arc::clone(&client),
-        )
-        .await;
+        let resp = cmd_client_tracking(&[Bytes::from("OFF")], Arc::clone(&client)).await;
         assert_eq!(resp, RespValue::ok());
 
         // Status should be off again
-        let resp = cmd_client_tracking(
-            &[Bytes::from("STATUS")],
-            Arc::clone(&client),
-        )
-        .await;
+        let resp = cmd_client_tracking(&[Bytes::from("STATUS")], Arc::clone(&client)).await;
         assert_eq!(resp, RespValue::SimpleString("off".into()));
     }
 
@@ -3571,7 +3568,11 @@ mod tests {
         let client = Arc::new(RwLock::new(ClientCtx::new()));
 
         let resp = cmd_client_tracking(
-            &[Bytes::from("ON"), Bytes::from("REDIRECT"), Bytes::from("42")],
+            &[
+                Bytes::from("ON"),
+                Bytes::from("REDIRECT"),
+                Bytes::from("42"),
+            ],
             Arc::clone(&client),
         )
         .await;
@@ -3588,11 +3589,7 @@ mod tests {
 
         let client = Arc::new(RwLock::new(ClientCtx::new()));
 
-        let resp = cmd_client_tracking(
-            &[Bytes::from("INVALID")],
-            Arc::clone(&client),
-        )
-        .await;
+        let resp = cmd_client_tracking(&[Bytes::from("INVALID")], Arc::clone(&client)).await;
         assert!(matches!(resp, RespValue::Error(_)));
     }
 
@@ -3650,11 +3647,7 @@ mod tests {
         }
 
         // Set caching YES
-        let resp = cmd_client_caching(
-            &[Bytes::from("YES")],
-            Arc::clone(&client),
-        )
-        .await;
+        let resp = cmd_client_caching(&[Bytes::from("YES")], Arc::clone(&client)).await;
         assert_eq!(resp, RespValue::ok());
 
         {
@@ -3663,11 +3656,7 @@ mod tests {
         }
 
         // Set caching NO
-        let resp = cmd_client_caching(
-            &[Bytes::from("NO")],
-            Arc::clone(&client),
-        )
-        .await;
+        let resp = cmd_client_caching(&[Bytes::from("NO")], Arc::clone(&client)).await;
         assert_eq!(resp, RespValue::ok());
 
         {
@@ -3683,11 +3672,7 @@ mod tests {
 
         let client = Arc::new(RwLock::new(ClientCtx::new()));
 
-        let resp = cmd_client_caching(
-            &[Bytes::from("MAYBE")],
-            Arc::clone(&client),
-        )
-        .await;
+        let resp = cmd_client_caching(&[Bytes::from("MAYBE")], Arc::clone(&client)).await;
         assert!(matches!(resp, RespValue::Error(_)));
     }
 
@@ -3715,7 +3700,11 @@ mod tests {
 
         // Set redirect
         cmd_client_tracking(
-            &[Bytes::from("ON"), Bytes::from("REDIRECT"), Bytes::from("42")],
+            &[
+                Bytes::from("ON"),
+                Bytes::from("REDIRECT"),
+                Bytes::from("42"),
+            ],
             Arc::clone(&client),
         )
         .await;

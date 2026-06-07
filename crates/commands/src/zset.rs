@@ -1442,8 +1442,13 @@ pub fn zinter(db: &Db, args: &[Bytes]) -> Result<RespValue, String> {
                 idx += 1 + numkeys;
             }
             "AGGREGATE" => {
-                agg = match str_from_bytes(&args[idx + 1])?.to_ascii_uppercase().as_str() {
-                    "SUM" | "MIN" | "MAX" => str_from_bytes(&args[idx + 1])?.to_ascii_uppercase().leak(),
+                agg = match str_from_bytes(&args[idx + 1])?
+                    .to_ascii_uppercase()
+                    .as_str()
+                {
+                    "SUM" | "MIN" | "MAX" => {
+                        str_from_bytes(&args[idx + 1])?.to_ascii_uppercase().leak()
+                    }
                     _ => return Err("ERR syntax error".into()),
                 };
                 idx += 2;
@@ -1525,8 +1530,13 @@ pub fn zunion(db: &Db, args: &[Bytes]) -> Result<RespValue, String> {
                 idx += 1 + numkeys;
             }
             "AGGREGATE" => {
-                agg = match str_from_bytes(&args[idx + 1])?.to_ascii_uppercase().as_str() {
-                    "SUM" | "MIN" | "MAX" => str_from_bytes(&args[idx + 1])?.to_ascii_uppercase().leak(),
+                agg = match str_from_bytes(&args[idx + 1])?
+                    .to_ascii_uppercase()
+                    .as_str()
+                {
+                    "SUM" | "MIN" | "MAX" => {
+                        str_from_bytes(&args[idx + 1])?.to_ascii_uppercase().leak()
+                    }
                     _ => return Err("ERR syntax error".into()),
                 };
                 idx += 2;
@@ -1603,13 +1613,11 @@ pub fn zmpop(db: &Db, args: &[Bytes]) -> Result<RespValue, String> {
     };
     idx += 1;
     let mut count: usize = 1;
-    if idx < args.len() {
-        if str_from_bytes(&args[idx])?.to_ascii_uppercase() == "COUNT" {
-            count = str_from_bytes(&args[idx + 1])?
-                .parse()
-                .map_err(|_| "ERR value is not an integer or out of range")?;
-            idx += 2;
-        }
+    if idx < args.len() && str_from_bytes(&args[idx])?.to_ascii_uppercase() == "COUNT" {
+        count = str_from_bytes(&args[idx + 1])?
+            .parse()
+            .map_err(|_| "ERR value is not an integer or out of range")?;
+        idx += 2;
     }
     if idx != args.len() {
         return Err("ERR syntax error".into());
@@ -1659,7 +1667,10 @@ pub async fn bzmpop(db: &Db, args: &[Bytes]) -> RespValue {
         Ok(v) => v,
         Err(e) => return RespValue::Error(e),
     };
-    let numkeys: usize = match str_from_bytes(&args[1]).and_then(|s| s.parse().map_err(|_| "ERR value is not an integer or out of range".to_string())) {
+    let numkeys: usize = match str_from_bytes(&args[1]).and_then(|s| {
+        s.parse()
+            .map_err(|_| "ERR value is not an integer or out of range".to_string())
+    }) {
         Ok(v) => v,
         Err(e) => return RespValue::Error(e),
     };
@@ -1674,14 +1685,17 @@ pub async fn bzmpop(db: &Db, args: &[Bytes]) -> RespValue {
     };
     idx += 1;
     let mut count: usize = 1;
-    if idx < args.len() {
-        if str_from_bytes(&args[idx]).map(|s| s.to_ascii_uppercase()) == Ok("COUNT".to_string()) {
-            count = match str_from_bytes(&args[idx + 1]).and_then(|s| s.parse().map_err(|_| "ERR value is not an integer or out of range".to_string())) {
-                Ok(v) => v,
-                Err(e) => return RespValue::Error(e),
-            };
-            idx += 2;
-        }
+    if idx < args.len()
+        && str_from_bytes(&args[idx]).map(|s| s.to_ascii_uppercase()) == Ok("COUNT".to_string())
+    {
+        count = match str_from_bytes(&args[idx + 1]).and_then(|s| {
+            s.parse()
+                .map_err(|_| "ERR value is not an integer or out of range".to_string())
+        }) {
+            Ok(v) => v,
+            Err(e) => return RespValue::Error(e),
+        };
+        idx += 2;
     }
     if idx != args.len() {
         return RespValue::Error("ERR syntax error".into());
@@ -1738,12 +1752,7 @@ pub async fn bzmpop(db: &Db, args: &[Bytes]) -> RespValue {
     }
 }
 
-async fn bzmpop_block_forever(
-    db: &Db,
-    keys: &[String],
-    is_min: bool,
-    count: usize,
-) -> RespValue {
+async fn bzmpop_block_forever(db: &Db, keys: &[String], is_min: bool, count: usize) -> RespValue {
     let mut receivers: Vec<(String, std::sync::mpsc::Receiver<()>)> = Vec::new();
     for key in keys {
         receivers.push((key.clone(), db.watch(&Bytes::from(key.clone()))));
@@ -1838,19 +1847,14 @@ pub async fn bzpopmin(db: &Db, args: &[Bytes]) -> RespValue {
 
     // Blocking path with timeout
     let dur = Duration::from_secs_f64(timeout);
-    let result =
-        tokio::time::timeout(dur, bzpopmin_block_forever(db, args, key_count)).await;
+    let result = tokio::time::timeout(dur, bzpopmin_block_forever(db, args, key_count)).await;
     match result {
         Ok(v) => v,
         Err(_) => RespValue::BulkString(None),
     }
 }
 
-async fn bzpopmin_block_forever(
-    db: &Db,
-    args: &[Bytes],
-    key_count: usize,
-) -> RespValue {
+async fn bzpopmin_block_forever(db: &Db, args: &[Bytes], key_count: usize) -> RespValue {
     let mut receivers: Vec<(String, std::sync::mpsc::Receiver<()>)> = Vec::new();
     for i in 0..key_count {
         let key = str_from_bytes(&args[i]).unwrap_or_default().to_string();
@@ -1936,19 +1940,14 @@ pub async fn bzpopmax(db: &Db, args: &[Bytes]) -> RespValue {
 
     // Blocking path with timeout
     let dur = Duration::from_secs_f64(timeout);
-    let result =
-        tokio::time::timeout(dur, bzpopmax_block_forever(db, args, key_count)).await;
+    let result = tokio::time::timeout(dur, bzpopmax_block_forever(db, args, key_count)).await;
     match result {
         Ok(v) => v,
         Err(_) => RespValue::BulkString(None),
     }
 }
 
-async fn bzpopmax_block_forever(
-    db: &Db,
-    args: &[Bytes],
-    key_count: usize,
-) -> RespValue {
+async fn bzpopmax_block_forever(db: &Db, args: &[Bytes], key_count: usize) -> RespValue {
     let mut receivers: Vec<(String, std::sync::mpsc::Receiver<()>)> = Vec::new();
     for i in 0..key_count {
         let key = str_from_bytes(&args[i]).unwrap_or_default().to_string();
@@ -2633,7 +2632,13 @@ mod tests {
             set_zset(&db, "z2", z2);
         }
         let args = vec![
-            bs("2"), bs("z1"), bs("z2"), bs("WEIGHTS"), bs("2"), bs("3"), bs("WITHSCORES"),
+            bs("2"),
+            bs("z1"),
+            bs("z2"),
+            bs("WEIGHTS"),
+            bs("2"),
+            bs("3"),
+            bs("WITHSCORES"),
         ];
         let result = zinter(&db, &args).unwrap();
         // b: 2*2 + 3*3 = 13
@@ -2662,7 +2667,12 @@ mod tests {
             set_zset(&db, "z2", z2);
         }
         let args = vec![
-            bs("2"), bs("z1"), bs("z2"), bs("AGGREGATE"), bs("MIN"), bs("WITHSCORES"),
+            bs("2"),
+            bs("z1"),
+            bs("z2"),
+            bs("AGGREGATE"),
+            bs("MIN"),
+            bs("WITHSCORES"),
         ];
         let result = zinter(&db, &args).unwrap();
         // b: min(10, 20) = 10

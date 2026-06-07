@@ -172,19 +172,16 @@ pub async fn cmd_wait(args: &[Bytes]) -> RespValue {
     }
 
     // Bounded wait with timeout
-    let result = tokio::time::timeout(
-        tokio::time::Duration::from_millis(timeout_ms),
-        async {
-            let mut notify = mgr.ack_notify_channel();
-            loop {
-                notify.changed().await.ok();
-                let acked = mgr.count_acked_replicas(target_offset);
-                if acked >= num_replicas {
-                    return acked;
-                }
+    let result = tokio::time::timeout(tokio::time::Duration::from_millis(timeout_ms), async {
+        let mut notify = mgr.ack_notify_channel();
+        loop {
+            notify.changed().await.ok();
+            let acked = mgr.count_acked_replicas(target_offset);
+            if acked >= num_replicas {
+                return acked;
             }
-        },
-    )
+        }
+    })
     .await;
 
     match result {
