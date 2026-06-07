@@ -164,7 +164,7 @@ pub unsafe extern "C" fn RedisModule_ReplyWithBulkString(
     if ctx_ptr.is_null() || buf.is_null() {
         return REDISMODULE_ERR;
     }
-    let slice = std::slice::from_raw_parts(buf, len);
+    let slice = std::slice::from_raw_parts(buf.cast::<u8>(), len);
     let bytes = Bytes::copy_from_slice(slice);
     let ctx = ctx(ctx_ptr);
     ctx.push_reply(RespValue::BulkString(Some(bytes)));
