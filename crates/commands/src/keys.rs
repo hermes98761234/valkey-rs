@@ -784,7 +784,9 @@ async fn cmd_sort(args: &[Bytes], store: &Arc<Store>) -> RespValue {
     let mut items: Vec<Bytes> = match store.get(key) {
         Some(e) => match &e.data {
             DataType::List(l) => l.iter().cloned().collect(),
+            DataType::ListPack(lp) => lp.iter().map(|e| e.to_bytes()).collect(),
             DataType::Set(s) => s.iter().cloned().collect(),
+            DataType::IntSet(is) => is.iter().map(|v| Bytes::from(v.to_string())).collect(),
             DataType::ZSet(z) => z.members.keys().cloned().collect(),
             _ => return RespValue::Error("WRONGTYPE".into()),
         },
@@ -922,7 +924,9 @@ async fn cmd_sort_ro(args: &[Bytes], store: &Arc<Store>) -> RespValue {
     let mut items: Vec<Bytes> = match store.get(key) {
         Some(e) => match &e.data {
             DataType::List(l) => l.iter().cloned().collect(),
+            DataType::ListPack(lp) => lp.iter().map(|e| e.to_bytes()).collect(),
             DataType::Set(s) => s.iter().cloned().collect(),
+            DataType::IntSet(is) => is.iter().map(|v| Bytes::from(v.to_string())).collect(),
             DataType::ZSet(z) => z.members.keys().cloned().collect(),
             _ => return RespValue::Error("WRONGTYPE".into()),
         },
