@@ -10,7 +10,7 @@ A production-quality, full-featured Valkey/Redis rewrite in Rust.
 
 - **Async Tokio runtime** — high-performance, non-blocking I/O with full concurrency
 - **RESP2 / RESP3 protocol** — complete Redis Serialization Protocol support
-- **All command families** — Strings, Lists, Sets, Sorted Sets, Hashes, Streams, Transactions
+- **All command families** — Strings, Lists, Sets, Sorted Sets, Hashes, Streams, Bitmaps, HyperLogLog, Transactions
 - **RDB + AOF persistence** — snapshot-based RDB dumps and Append-Only File journaling
 - **Pub/Sub with keyspace notifications** — real-time publish/subscribe with key-change events
 - **Lua scripting (EVAL)** — server-side scripting via Lua 5.4 engine
@@ -23,10 +23,22 @@ A production-quality, full-featured Valkey/Redis rewrite in Rust.
 - **Compact encodings** — listpack and intset for memory-efficient small aggregates
 - **Client-side caching** — CLIENT TRACKING with invalidation messages (RESP3)
 - **Redis Modules API** — C ABI compatibility layer for loading external `.so` modules
+- **Bitmaps & HyperLogLog** — full BITFIELD support and upstream-compatible PFADD/PFCOUNT/PFMERGE
+- **Cross-platform** — CI-tested on Linux, macOS, and Windows; prebuilt release binaries for all three
 
 ## Getting Started
 
-### Prerequisites
+### Prebuilt Binaries
+
+Each [GitHub Release](https://github.com/hermes98761234/valkey-rs/releases) ships `valkey-server` and `valkey-sentinel` for:
+
+- Linux: `x86_64` / `aarch64` (gnu and musl)
+- macOS: `x86_64` / `aarch64`
+- Windows: `x86_64`
+
+A `SHA256SUMS.txt` covering all binaries is included.
+
+### Prerequisites (building from source)
 
 - **Rust** 1.78 or later ([rustup](https://rustup.rs/))
 
@@ -42,7 +54,11 @@ cargo build --release -p valkey-server
 ./target/release/valkey-server
 ```
 
-The server starts listening on `0.0.0.0:6379` by default.
+The server starts listening on `0.0.0.0:6379` by default. Set the `PORT` env var to use a different port:
+
+```sh
+PORT=7777 ./target/release/valkey-server
+```
 
 ### Connect
 
@@ -87,14 +103,14 @@ docker run -d -p 6379:6379 -v ./data:/data valkey-rs
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| Port | `6379` | Plain TCP listen address: `0.0.0.0:{port}` |
+| Port | `6379` | Plain TCP listen address: `0.0.0.0:{port}` (set via `PORT` env var) |
 | AppendOnly | auto-detected | Enable AOF persistence when `appendonly.aof` exists on startup |
 | AOF filename | `./appendonly.aof` | Path to the AOF journal file |
 | RDB filename | `./dump.rdb` | Path to the RDB snapshot file |
 | Auto-save interval | `10s` | Interval for automatic RDB snapshots (dirty keys > 0) |
 | TLS port | *none* | TLS listen port (set via `TLS_PORT` env var) |
 | TLS cert file | *none* | PEM certificate chain (set via `TLS_CERT` env var) |
-| TLS key file | *none` | PEM private key (set via `TLS_KEY` env var) |
+| TLS key file | *none* | PEM private key (set via `TLS_KEY` env var) |
 | TLS CA cert | *none* | PEM CA certificate for client auth (set via `TLS_CA_CERT` env var) |
 | TLS client auth | `no` | Client certificate policy: `no`, `yes`, or `optional` (`TLS_AUTH_CLIENTS`) |
 | Replication | enabled | Built-in PSYNC replication manager with backlog |
@@ -114,17 +130,19 @@ TLS_PORT=6380 TLS_CERT=cert.pem TLS_KEY=key.pem TLS_CA_CERT=ca.pem TLS_AUTH_CLIE
 
 | Family | Commands | Status |
 |--------|----------|--------|
-| **Strings** | GET, SET, SETEX, PSETEX, SETNX, GETSET, APPEND, INCR, DECR, INCRBY, DECRBY, INCRBYFLOAT, STRLEN, MGET, MSET | ✅ Implemented |
-| **Keys** | DEL, UNLINK, EXISTS, EXPIRE, PEXPIRE, EXPIREAT, PEXPIREAT, PERSIST, TTL, PTTL, TYPE, RENAME, RENAMENX, KEYS, SCAN, FLUSHDB, FLUSHALL, RANDOMKEY | ✅ Implemented |
-| **Lists** | RPUSH, LPUSH, RPOP, LPOP, LLEN, LRANGE, LINDEX, LSET, LINSERT, LREM, LTRIM, BLPOP, BRPOP | ✅ Implemented |
+| **Strings** | GET, SET, SETEX, PSETEX, SETNX, GETSET, APPEND, INCR, DECR, INCRBY, DECRBY, INCRBYFLOAT, STRLEN, MGET, MSET, LCS | ✅ Implemented |
+| **Keys** | DEL, UNLINK, EXISTS, EXPIRE, PEXPIRE, EXPIREAT, PEXPIREAT, PERSIST, TTL, PTTL, TYPE, TOUCH, RENAME, RENAMENX, KEYS, SCAN, FLUSHDB, FLUSHALL, RANDOMKEY | ✅ Implemented |
+| **Lists** | RPUSH, LPUSH, RPUSHX, LPUSHX, RPOP, LPOP, RPOPLPUSH, LLEN, LRANGE, LINDEX, LSET, LINSERT, LREM, LTRIM, BLPOP, BRPOP, BRPOPLPUSH | ✅ Implemented |
 | **Sets** | SADD, SREM, SMEMBERS, SISMEMBER, SCARD, SPOP, SMOVE, SUNION, SUNIONSTORE, SINTER, SINTERSTORE, SDIFF, SDIFFSTORE, SRANDMEMBER, SSCAN | ✅ Implemented |
-| **Sorted Sets** | ZADD, ZREM, ZRANGE, ZREVRANGE, ZRANGEBYSCORE, ZREVRANGEBYSCORE, ZINCRBY, ZSCORE, ZRANK, ZREVRANK, ZCARD, ZCOUNT, ZPOPMIN, ZPOPMAX, ZRANGEBYLEX, ZLEXCOUNT, ZSCAN | ✅ Implemented |
-| **Hashes** | HSET, HGET, HDEL, HGETALL, HEXISTS, HINCRBY, HINCRBYFLOAT, HKEYS, HVALS, HLEN, HMSET, HMGET, HSETNX, HSCAN | ✅ Implemented |
-| **Streams** | XADD, XREAD, XRANGE, XREVRANGE, XLEN, XDEL, XTRIM, XGROUP, XACK, XREADGROUP | ✅ Implemented |
-| **Pub/Sub** | SUBSCRIBE, UNSUBSCRIBE, PUBLISH, PSUBSCRIBE, PUNSUBSCRIBE, PUBSUB, LISTEN | ✅ Implemented |
+| **Sorted Sets** | ZADD, ZREM, ZRANGE, ZREVRANGE, ZRANGEBYSCORE, ZREVRANGEBYSCORE, ZINCRBY, ZSCORE, ZRANK, ZREVRANK, ZCARD, ZCOUNT, ZINTERCARD, ZPOPMIN, ZPOPMAX, ZRANGEBYLEX, ZREVRANGEBYLEX, ZREMRANGEBYLEX, ZLEXCOUNT, ZRANGESTORE, ZSCAN | ✅ Implemented |
+| **Hashes** | HSET, HGET, HDEL, HGETALL, HEXISTS, HINCRBY, HINCRBYFLOAT, HKEYS, HVALS, HLEN, HMSET, HMGET, HSETNX, HSTRLEN, HSCAN | ✅ Implemented |
+| **Streams** | XADD, XREAD, XRANGE, XREVRANGE, XLEN, XDEL, XTRIM, XSETID, XINFO, XGROUP, XACK, XCLAIM, XPENDING, XAUTOCLAIM, XREADGROUP | ✅ Implemented |
+| **Bitmaps** | SETBIT, GETBIT, BITCOUNT, BITPOS, BITOP, BITFIELD, BITFIELD_RO | ✅ Implemented |
+| **HyperLogLog** | PFADD, PFCOUNT, PFMERGE | ✅ Implemented |
+| **Pub/Sub** | SUBSCRIBE, UNSUBSCRIBE, PUBLISH, PSUBSCRIBE, PUNSUBSCRIBE, PUBSUB | ⚠️ Partial (push-mode wiring in progress) |
 | **Transactions** | MULTI, EXEC, DISCARD, WATCH | ✅ Implemented |
 | **Scripting** | EVAL, EVALSHA, SCRIPT LOAD, SCRIPT FLUSH, SCRIPT EXISTS | ✅ Implemented |
-| **Server** | PING, INFO, CONFIG, DBSIZE, TIME, CLIENT, COMMAND, SELECT, AUTH, ACL, SHUTDOWN, SAVE, BGSAVE, SLOWLOG, LATENCY, MODULE | ✅ Implemented |
+| **Server** | PING, HELLO, INFO, CONFIG, DBSIZE, TIME, CLIENT, COMMAND, SELECT, SWAPDB, AUTH, ACL, SHUTDOWN, SAVE, BGSAVE, SLOWLOG, LATENCY, MODULE, LOLWUT | ✅ Implemented |
 | **Replication** | REPLICAOF, PSYNC, ROLE, REPLCONF | ✅ Implemented |
 | **Cluster** | CLUSTER INFO, CLUSTER NODES, CLUSTER SLOTS, CLUSTER KEYSLOT, CLUSTER ADDSLOTS, CLUSTER DELSLOTS, CLUSTER MEET, CLUSTER FORGET, CLUSTER REPLICATE | ✅ Implemented |
 | **Geo** | GEOADD, GEODIST, GEOPOS, GEOSEARCH, GEOSEARCHSTORE, GEORADIUS, GEORADIUSBYMEMBER | ✅ Implemented |
@@ -139,7 +157,7 @@ valkey-rs/
 ├── crates/
 │   ├── proto/         RESP2/RESP3 protocol encoding and decoding (RespEncoder, RespDecoder)
 │   ├── storage/       In-memory key-value store (DashMap-based, sharded, async-safe)
-│   ├── commands/      Command dispatch and per-family handlers (ACL, strings, hashes, lists, sets, zsets, streams, transactions, pubsub, scripting, server, replication, geo)
+│   ├── commands/      Command dispatch and per-family handlers (ACL, strings, hashes, lists, sets, zsets, streams, bitmaps, hyperloglog, transactions, pubsub, scripting, server, replication, geo)
 │   ├── persistence/   RDB snapshot save/load and AOF journaling (FsyncPolicy: EverySec)
 │   ├── replication/   Leader-follower replication (PSYNC, circular buffer backlog, command propagation)
 │   ├── cluster/       Cluster mode (CRC16 hash slots, hashtag extraction, gossip, MOVED/ASK, ClusterState)
@@ -165,12 +183,27 @@ Client → TcpListener / TlsAcceptor → ClientStream (Plain / TLS)
 cargo test --all
 ```
 
+Unit tests run in CI on Linux, macOS, and Windows.
+
+Integration tests compare behavior against a running server using `redis-cli`:
+
+```sh
+PORT=7777 ./target/debug/valkey-server &
+REDIS_PORT=7777 bash tests/integration/test_strings.sh   # or any other suite
+```
+
 ## Roadmap
 
 - [ ] Full blocking WAIT semantics for synchronous replication guarantee
+- [ ] True blocking semantics for BLPOP/BRPOP/BRPOPLPUSH
+- [ ] Push-mode pub/sub wiring in the connection handler
+- [ ] FUNCTION / FCALL (Redis Functions)
+- [ ] Hash-field TTL commands (HEXPIRE family)
 - [ ] Cluster resharding (live slot migration between nodes)
 - [ ] CLUSTER BUMPEPOCH and CONFIG REWRITE cluster commands
 - [x] Sentinel mode for automatic failover
+- [x] Bitmaps, HyperLogLog, LCS, and stream consumer-group commands
+- [x] Multi-platform CI and release binaries (Linux, macOS, Windows)
 - [x] CLIENT TRACKING with invalidation messages
 - [x] Memory-efficient encoding for small aggregates (listpack, intset)
 - [x] Redis Modules API compatibility layer
