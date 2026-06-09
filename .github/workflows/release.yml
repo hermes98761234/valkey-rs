@@ -9,12 +9,12 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  BIN_NAME: valkey-server
 
 jobs:
   build:
     name: Build ${{ matrix.target }}
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
@@ -29,6 +29,15 @@ jobs:
           - os: ubuntu-latest
             target: aarch64-unknown-linux-musl
             use_cross: true
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            use_cross: false
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            use_cross: false
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            use_cross: false
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -49,25 +58,35 @@ jobs:
 
       - name: Build (native)
         if: '!matrix.use_cross'
-        run: cargo build --release --target ${{ matrix.target }} -p valkey-server
+        run: cargo build --release --target ${{ matrix.target }} -p valkey-server -p valkey-sentinel
 
       - name: Build (cross)
         if: matrix.use_cross
-        run: cross build --release --target ${{ matrix.target }} -p valkey-server
+        run: cross build --release --target ${{ matrix.target }} -p valkey-server -p valkey-sentinel
 
-      - name: Strip debug symbols
-        run: strip target/${{ matrix.target }}/release/${{ env.BIN_NAME }} || true
-
-      - name: Rename binary with target suffix
+      - name: Prepare binaries
+        shell: bash
         run: |
-          mv target/${{ matrix.target }}/release/${{ env.BIN_NAME }} \
-             target/${{ matrix.target }}/release/${{ env.BIN_NAME }}-${{ matrix.target }}
+          mkdir -p dist
+          ext=""
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            ext=".exe"
+          fi
+          for bin in valkey-server valkey-sentinel; do
+            src="target/${{ matrix.target }}/release/${bin}${ext}"
+            if [ "${{ runner.os }}" != "Windows" ]; then
+              strip "$src" || true
+            fi
+            cp "$src" "dist/${bin}-${{ matrix.target }}${ext}"
+          done
+          ls -l dist
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.BIN_NAME }}-${{ matrix.target }}
-          path: target/${{ matrix.target }}/release/${{ env.BIN_NAME }}-${{ matrix.target }}
+          name: binaries-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
 
   release:
     name: Create GitHub Release
@@ -75,6 +94,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -85,7 +106,7 @@ jobs:
       - name: Generate SHA-256 checksums
         run: |
           cd artifacts
-          sha256sum ${{ env.BIN_NAME }}-* > SHA256SUMS.txt
+          sha256sum valkey-* > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
       - name: Determine pre-release status
@@ -124,7 +145,7 @@ jobs:
           body_path: RELEASE_NOTES.md
           prerelease: ${{ steps.prerelease.outputs.prerelease }}
           files: |
-            artifacts/${{ env.BIN_NAME }}-*
+            artifacts/valkey-*
             artifacts/SHA256SUMS.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
