@@ -10,10 +10,10 @@ assert_eq() {
     local got
     got=$($CLI "$@" 2>/dev/null)
     if [ "$got" = "$expected" ]; then
-        ((PASS++))
+        PASS=$((PASS+1))
     else
         echo "FAIL: $* => '$got' != '$expected'"
-        ((FAIL++))
+        FAIL=$((FAIL+1))
     fi
 }
 
@@ -22,10 +22,10 @@ assert_contains() {
     local got
     got=$($CLI "$@" 2>/dev/null)
     if echo "$got" | grep -q "$expected"; then
-        ((PASS++))
+        PASS=$((PASS+1))
     else
         echo "FAIL: $* => '$got' does not contain '$expected'"
-        ((FAIL++))
+        FAIL=$((FAIL+1))
     fi
 }
 
@@ -34,10 +34,10 @@ assert_not_empty() {
     local got
     got=$($CLI "$@" 2>/dev/null)
     if [ -n "$got" ]; then
-        ((PASS++))
+        PASS=$((PASS+1))
     else
         echo "FAIL: $* returned empty"
-        ((FAIL++))
+        FAIL=$((FAIL+1))
     fi
 }
 
@@ -94,31 +94,31 @@ assert_eq "4" ZADD rzset2 1 "a" 2 "b" 3 "c" 4 "d"
 zrem_score_result=$($CLI ZREMRANGEBYSCORE rzset2 3 4 2>/dev/null)
 # Should remove 2 elements (c and d with scores 3 and 4)
 if [ "$zrem_score_result" = "2" ]; then
-    ((PASS++))
+    PASS=$((PASS+1))
     assert_eq "2" ZCARD rzset2
 else
     echo "WARN: ZREMRANGEBYSCORE returned '$zrem_score_result' (expected 2)"
-    ((PASS++))
+    PASS=$((PASS+1))
 fi
 
 # ZPOPMIN / ZPOPMAX
 assert_eq "3" ZADD pzset 1 "x" 2 "y" 3 "z"
-min=$(ZPOPMIN pzset 1 2>/dev/null | head -1)
+min=$($CLI ZPOPMIN pzset 1 2>/dev/null | head -1)
 if [ -n "$min" ]; then
-    ((PASS++))
+    PASS=$((PASS+1))
 else
     echo "WARN: ZPOPMIN returned empty"
-    ((PASS++))
+    PASS=$((PASS+1))
 fi
 
 # ZRANDMEMBER
 assert_eq "2" ZADD randz 1 "a" 2 "b"
 rand=$($CLI ZRANDMEMBER randz 2>/dev/null)
 if [ -n "$rand" ]; then
-    ((PASS++))
+    PASS=$((PASS+1))
 else
     echo "WARN: ZRANDMEMBER returned empty"
-    ((PASS++))
+    PASS=$((PASS+1))
 fi
 
 # ZUNIONSTORE (returns integer count)

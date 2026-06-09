@@ -10,10 +10,10 @@ assert_eq() {
     local got
     got=$($CLI "$@" 2>/dev/null)
     if [ "$got" = "$expected" ]; then
-        ((PASS++))
+        PASS=$((PASS+1))
     else
         echo "FAIL: $* => '$got' != '$expected'"
-        ((FAIL++))
+        FAIL=$((FAIL+1))
     fi
 }
 
@@ -22,10 +22,10 @@ assert_contains() {
     local got
     got=$($CLI "$@" 2>/dev/null)
     if echo "$got" | grep -q "$expected"; then
-        ((PASS++))
+        PASS=$((PASS+1))
     else
         echo "FAIL: $* => '$got' does not contain '$expected'"
-        ((FAIL++))
+        FAIL=$((FAIL+1))
     fi
 }
 
@@ -34,10 +34,10 @@ assert_not_empty() {
     local got
     got=$($CLI "$@" 2>/dev/null)
     if [ -n "$got" ]; then
-        ((PASS++))
+        PASS=$((PASS+1))
     else
         echo "FAIL: $* returned empty"
-        ((FAIL++))
+        FAIL=$((FAIL+1))
     fi
 }
 
@@ -84,19 +84,20 @@ assert_eq "2" LLEN remlist
 rplp_result=$($CLI RPOPLPUSH src dst 2>/dev/null)
 if echo "$rplp_result" | grep -qi "unknown command\|not implemented"; then
     echo "SKIP: RPOPLPUSH not implemented"
-    ((PASS++))
+    PASS=$((PASS+1))
 else
+    # LPUSH x y z builds [z, y, x]; RPOPLPUSH pops the tail => "x"
     assert_eq "3" LPUSH src "x" "y" "z"
-    assert_eq "z" RPOPLPUSH src dst
+    assert_eq "x" RPOPLPUSH src dst
     assert_contains "y" LRANGE src 0 -1
-    assert_contains "z" LRANGE dst 0 -1
+    assert_contains "x" LRANGE dst 0 -1
 fi
 
 # LMOVE (may not be implemented)
 lm_result=$($CLI LMOVE msrc mdst LEFT LEFT 2>/dev/null)
 if echo "$lm_result" | grep -qi "unknown command\|not implemented"; then
     echo "SKIP: LMOVE not implemented"
-    ((PASS++))
+    PASS=$((PASS+1))
 else
     assert_eq "2" LPUSH msrc "a" "b"
     assert_not_empty LMOVE msrc mdst LEFT LEFT
@@ -106,7 +107,7 @@ fi
 # BLPOP (non-blocking with timeout)
 blpop_result=$(timeout 2 $CLI BLPOP empty 1 2>/dev/null)
 # Should return empty/nil after timeout — just verify it doesn't hang
-((PASS++))
+PASS=$((PASS+1))
 
 echo "List tests: $PASS passed, $FAIL failed"
 exit $FAIL

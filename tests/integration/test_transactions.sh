@@ -11,10 +11,10 @@ assert_eq() {
     local got
     got=$($CLI "$@" 2>/dev/null)
     if [ "$got" = "$expected" ]; then
-        ((PASS++))
+        PASS=$((PASS+1))
     else
         echo "FAIL: $* => '$got' != '$expected'"
-        ((FAIL++))
+        FAIL=$((FAIL+1))
     fi
 }
 
@@ -34,10 +34,10 @@ pipe_assert_line() {
     local got
     got=$(echo "$output" | sed -n "${lineno}p")
     if [ "$got" = "$expected" ]; then
-        ((PASS++))
+        PASS=$((PASS+1))
     else
         echo "FAIL: line $lineno of pipe output: '$got' != '$expected'"
-        ((FAIL++))
+        FAIL=$((FAIL+1))
     fi
 }
 
@@ -50,7 +50,7 @@ pipe_assert_line "OK"     1 "$out"   # MULTI
 pipe_assert_line "QUEUED" 2 "$out"   # SET tx_key
 pipe_assert_line "QUEUED" 3 "$out"   # INCR tx_counter
 # line 4 is start of EXEC array - just check non-empty
-if [ -n "$(echo "$out" | sed -n '4p')" ]; then ((PASS++)); else echo "FAIL: EXEC returned nothing"; ((FAIL++)); fi
+if [ -n "$(echo "$out" | sed -n '4p')" ]; then PASS=$((PASS+1)); else echo "FAIL: EXEC returned nothing"; FAIL=$((FAIL+1)); fi
 
 # Verify results were applied
 assert_eq "tx_val" GET tx_key
@@ -62,13 +62,13 @@ pipe_assert_line "OK"     1 "$out"
 pipe_assert_line "QUEUED" 2 "$out"
 pipe_assert_line "QUEUED" 3 "$out"
 pipe_assert_line "QUEUED" 4 "$out"
-if [ -n "$(echo "$out" | sed -n '5p')" ]; then ((PASS++)); else echo "FAIL: EXEC returned nothing"; ((FAIL++)); fi
+if [ -n "$(echo "$out" | sed -n '5p')" ]; then PASS=$((PASS+1)); else echo "FAIL: EXEC returned nothing"; FAIL=$((FAIL+1)); fi
 
 assert_eq "1" GET tx_a
 assert_eq "2" GET tx_b
 
 lrange=$($CLI LRANGE tx_list 0 -1 2>/dev/null)
-if echo "$lrange" | grep -q "y"; then ((PASS++)); else echo "FAIL: LRANGE tx_list does not contain y"; ((FAIL++)); fi
+if echo "$lrange" | grep -q "y"; then PASS=$((PASS+1)); else echo "FAIL: LRANGE tx_list does not contain y"; FAIL=$((FAIL+1)); fi
 
 # --- DISCARD aborts transaction ---
 out=$(pipe_session "MULTI\nSET discard_key should_not_exist\nDISCARD")
@@ -81,15 +81,15 @@ assert_eq "" GET discard_key
 # --- MULTI cannot be nested ---
 out=$(pipe_session "MULTI\nMULTI\nDISCARD")
 pipe_assert_line "OK"  1 "$out"
-if echo "$out" | sed -n '2p' | grep -q "^ERR"; then ((PASS++)); else echo "FAIL: nested MULTI should return ERR"; ((FAIL++)); fi
+if echo "$out" | sed -n '2p' | grep -q "^ERR"; then PASS=$((PASS+1)); else echo "FAIL: nested MULTI should return ERR"; FAIL=$((FAIL+1)); fi
 
 # --- EXEC without MULTI is an error ---
 out=$(pipe_session "EXEC")
-if echo "$out" | grep -q "^ERR"; then ((PASS++)); else echo "FAIL: EXEC without MULTI should return ERR"; ((FAIL++)); fi
+if echo "$out" | grep -q "^ERR"; then PASS=$((PASS+1)); else echo "FAIL: EXEC without MULTI should return ERR"; FAIL=$((FAIL+1)); fi
 
 # --- DISCARD without MULTI is an error ---
 out=$(pipe_session "DISCARD")
-if echo "$out" | grep -q "^ERR"; then ((PASS++)); else echo "FAIL: DISCARD without MULTI should return ERR"; ((FAIL++)); fi
+if echo "$out" | grep -q "^ERR"; then PASS=$((PASS+1)); else echo "FAIL: DISCARD without MULTI should return ERR"; FAIL=$((FAIL+1)); fi
 
 # --- WATCH + EXEC (no conflict) ---
 $CLI SET watch_key "initial" >/dev/null
@@ -98,7 +98,7 @@ pipe_assert_line "OK"     1 "$out"  # WATCH
 pipe_assert_line "OK"     2 "$out"  # MULTI
 pipe_assert_line "QUEUED" 3 "$out"  # SET (queued)
 # EXEC should succeed (no other client modified the key)
-if [ -n "$(echo "$out" | sed -n '4p')" ]; then ((PASS++)); else echo "WARN: EXEC after WATCH returned empty"; ((PASS++)); fi
+if [ -n "$(echo "$out" | sed -n '4p')" ]; then PASS=$((PASS+1)); else echo "WARN: EXEC after WATCH returned empty"; PASS=$((PASS+1)); fi
 assert_eq "modified" GET watch_key
 
 # --- UNWATCH ---

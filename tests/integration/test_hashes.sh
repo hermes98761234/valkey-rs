@@ -10,10 +10,10 @@ assert_eq() {
     local got
     got=$($CLI "$@" 2>/dev/null)
     if [ "$got" = "$expected" ]; then
-        ((PASS++))
+        PASS=$((PASS+1))
     else
         echo "FAIL: $* => '$got' != '$expected'"
-        ((FAIL++))
+        FAIL=$((FAIL+1))
     fi
 }
 
@@ -22,10 +22,10 @@ assert_contains() {
     local got
     got=$($CLI "$@" 2>/dev/null)
     if echo "$got" | grep -q "$expected"; then
-        ((PASS++))
+        PASS=$((PASS+1))
     else
         echo "FAIL: $* => '$got' does not contain '$expected'"
-        ((FAIL++))
+        FAIL=$((FAIL+1))
     fi
 }
 
@@ -34,10 +34,10 @@ assert_not_empty() {
     local got
     got=$($CLI "$@" 2>/dev/null)
     if [ -n "$got" ]; then
-        ((PASS++))
+        PASS=$((PASS+1))
     else
         echo "FAIL: $* returned empty"
-        ((FAIL++))
+        FAIL=$((FAIL+1))
     fi
 }
 

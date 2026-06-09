@@ -12,10 +12,10 @@ assert_eq() {
     local got
     got=$($CLI "$@" 2>/dev/null)
     if [ "$got" = "$expected" ]; then
-        ((PASS++))
+        PASS=$((PASS+1))
     else
         echo "FAIL: $* => '$got' != '$expected'"
-        ((FAIL++))
+        FAIL=$((FAIL+1))
     fi
 }
 
@@ -24,12 +24,12 @@ assert_ok_or_skip() {
     got=$($CLI "$@" 2>/dev/null)
     if echo "$got" | grep -qi "ERR\|unknown"; then
         echo "SKIP: $* not available in normal mode ($got)"
-        ((PASS++))
+        PASS=$((PASS+1))
     elif [ -n "$got" ]; then
-        ((PASS++))
+        PASS=$((PASS+1))
     else
         echo "FAIL: $* returned empty"
-        ((FAIL++))
+        FAIL=$((FAIL+1))
     fi
 }
 
@@ -37,10 +37,10 @@ assert_not_empty() {
     local got
     got=$($CLI "$@" 2>/dev/null)
     if [ -n "$got" ]; then
-        ((PASS++))
+        PASS=$((PASS+1))
     else
         echo "FAIL: $* returned empty"
-        ((FAIL++))
+        FAIL=$((FAIL+1))
     fi
 }
 
@@ -50,10 +50,10 @@ $CLI FLUSHALL >/dev/null
 pub_result=$($CLI PUBLISH testchannel "hello" 2>/dev/null)
 # PUBLISH returns the number of subscribers (0 if none)
 if [ "$pub_result" = "0" ] || [ -z "$pub_result" ] || echo "$pub_result" | grep -qi "ERR"; then
-    ((PASS++))
+    PASS=$((PASS+1))
 else
     echo "FAIL: PUBLISH => '$pub_result'"
-    ((FAIL++))
+    FAIL=$((FAIL+1))
 fi
 
 # PUBSUB CHANNELS
@@ -68,10 +68,10 @@ assert_ok_or_skip PUBSUB NUMPAT
 # SPUBLISH (shard publish - may or may not be available)
 spub_result=$($CLI SPUBLISH shardch "msg" 2>/dev/null)
 if [ -n "$spub_result" ]; then
-    ((PASS++))
+    PASS=$((PASS+1))
 else
     echo "SKIP: SPUBLISH returned empty"
-    ((PASS++))
+    PASS=$((PASS+1))
 fi
 
 echo "PubSub tests: $PASS passed, $FAIL failed"

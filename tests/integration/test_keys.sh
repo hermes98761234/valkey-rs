@@ -10,10 +10,10 @@ assert_eq() {
     local got
     got=$($CLI "$@" 2>/dev/null)
     if [ "$got" = "$expected" ]; then
-        ((PASS++))
+        PASS=$((PASS+1))
     else
         echo "FAIL: $* => '$got' != '$expected'"
-        ((FAIL++))
+        FAIL=$((FAIL+1))
     fi
 }
 
@@ -22,10 +22,10 @@ assert_contains() {
     local got
     got=$($CLI "$@" 2>/dev/null)
     if echo "$got" | grep -q "$expected"; then
-        ((PASS++))
+        PASS=$((PASS+1))
     else
         echo "FAIL: $* => '$got' does not contain '$expected'"
-        ((FAIL++))
+        FAIL=$((FAIL+1))
     fi
 }
 
@@ -34,10 +34,10 @@ assert_gt_zero() {
     local got
     got=$($CLI "$@" 2>/dev/null)
     if [ -n "$got" ] && [ "$got" -gt 0 ] 2>/dev/null; then
-        ((PASS++))
+        PASS=$((PASS+1))
     else
         echo "FAIL: $* => '$got' (expected > 0)"
-        ((FAIL++))
+        FAIL=$((FAIL+1))
     fi
 }
 
@@ -84,28 +84,28 @@ assert_ok SET exkey "val"
 # EXPIRE returns 1 if timeout was set, 0 if key doesn't exist
 expire_result=$($CLI EXPIRE exkey 60 2>/dev/null)
 if [ "$expire_result" = "1" ] || [ "$expire_result" = "OK" ]; then
-    ((PASS++))
+    PASS=$((PASS+1))
 else
     echo "FAIL: EXPIRE => '$expire_result' (expected 1 or OK)"
-    ((FAIL++))
+    FAIL=$((FAIL+1))
 fi
 assert_gt_zero TTL exkey
 
 # PERSIST
 persist_result=$($CLI PERSIST exkey 2>/dev/null)
 if [ -n "$persist_result" ]; then
-    ((PASS++))
+    PASS=$((PASS+1))
 else
     echo "WARN: PERSIST returned empty"
-    ((PASS++))
+    PASS=$((PASS+1))
 fi
 sleep 1
 ttl_after_persist=$($CLI TTL exkey 2>/dev/null)
 if [ "$ttl_after_persist" = "-1" ]; then
-    ((PASS++))
+    PASS=$((PASS+1))
 else
     echo "WARN: TTL after PERSIST => '$ttl_after_persist' (expected -1)"
-    ((PASS++))
+    PASS=$((PASS+1))
 fi
 
 # EXPIRETIME
@@ -120,7 +120,7 @@ assert_gt_zero PEXPIRETIME etkey
 touch_result=$($CLI TOUCH t1 t2 2>/dev/null)
 if echo "$touch_result" | grep -qi "unknown command\|not implemented"; then
     echo "SKIP: TOUCH not implemented"
-    ((PASS++))
+    PASS=$((PASS+1))
 else
     assert_ok SET t1 "a"
     assert_ok SET t2 "b"
@@ -136,11 +136,11 @@ assert_eq "" GET ulkey
 assert_ok SET src "value"
 copy_result=$($CLI COPY src dst 2>/dev/null)
 if [ "$copy_result" = "1" ]; then
-    ((PASS++))
+    PASS=$((PASS+1))
     assert_eq "value" GET dst
 else
     echo "WARN: COPY not fully implemented (got '$copy_result')"
-    ((PASS++))
+    PASS=$((PASS+1))
     # Clean up manually
     assert_ok SET dst "value"
 fi
@@ -149,10 +149,10 @@ fi
 assert_ok SET dumpkey "dumpval"
 dump_data=$($CLI DUMP dumpkey 2>/dev/null)
 if [ -n "$dump_data" ]; then
-    ((PASS++))
+    PASS=$((PASS+1))
 else
     echo "WARN: DUMP returned empty"
-    ((PASS++))
+    PASS=$((PASS+1))
 fi
 
 # SORT_RO (read-only sort)
@@ -169,10 +169,10 @@ assert_eq "World" SUBSTR substr_key 6 10
 # RANDOMKEY
 rk=$($CLI RANDOMKEY 2>/dev/null)
 if [ -n "$rk" ]; then
-    ((PASS++))
+    PASS=$((PASS+1))
 else
     echo "WARN: RANDOMKEY returned empty (may be OK if DB is empty)"
-    ((PASS++))
+    PASS=$((PASS+1))
 fi
 
 echo "Key/Generic tests: $PASS passed, $FAIL failed"

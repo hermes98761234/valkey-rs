@@ -11,10 +11,10 @@ assert_eq() {
     local got
     got=$($CLI "$@" 2>/dev/null)
     if [ "$got" = "$expected" ]; then
-        ((PASS++))
+        PASS=$((PASS+1))
     else
         echo "FAIL: $* => '$got' != '$expected'"
-        ((FAIL++))
+        FAIL=$((FAIL+1))
     fi
 }
 
@@ -23,10 +23,10 @@ assert_contains() {
     local got
     got=$($CLI "$@" 2>/dev/null)
     if echo "$got" | grep -q "$expected"; then
-        ((PASS++))
+        PASS=$((PASS+1))
     else
         echo "FAIL: $* => '$got' does not contain '$expected'"
-        ((FAIL++))
+        FAIL=$((FAIL+1))
     fi
 }
 
@@ -35,10 +35,10 @@ assert_not_empty() {
     local got
     got=$($CLI "$@" 2>/dev/null)
     if [ -n "$got" ]; then
-        ((PASS++))
+        PASS=$((PASS+1))
     else
         echo "FAIL: $* returned empty"
-        ((FAIL++))
+        FAIL=$((FAIL+1))
     fi
 }
 
@@ -58,10 +58,10 @@ assert_eq "42" GET persist_counter
 # Trigger BGSAVE
 save_result=$($CLI BGSAVE 2>/dev/null)
 if [ -n "$save_result" ]; then
-    ((PASS++))
+    PASS=$((PASS+1))
 else
     echo "WARN: BGSAVE returned empty"
-    ((PASS++))
+    PASS=$((PASS+1))
 fi
 sleep 2
 
@@ -97,28 +97,28 @@ assert_eq "val2" HGET persist_hash field2
 assert_ok SET dump_test "dump_value"
 dump_data=$($CLI DUMP dump_test 2>/dev/null)
 if [ -n "$dump_data" ]; then
-    ((PASS++))
+    PASS=$((PASS+1))
 else
     echo "WARN: DUMP returned empty"
-    ((PASS++))
+    PASS=$((PASS+1))
 fi
 
 # BGREWRITEAOF
 aof_result=$($CLI BGREWRITEAOF 2>/dev/null)
 if [ -n "$aof_result" ]; then
-    ((PASS++))
+    PASS=$((PASS+1))
 else
     echo "WARN: BGREWRITEAOF returned empty"
-    ((PASS++))
+    PASS=$((PASS+1))
 fi
 
 # LASTSAVE
 lastsave=$($CLI LASTSAVE 2>/dev/null)
 if [ -n "$lastsave" ] && [ "$lastsave" -gt 0 ] 2>/dev/null; then
-    ((PASS++))
+    PASS=$((PASS+1))
 else
     echo "WARN: LASTSAVE => '$lastsave'"
-    ((PASS++))
+    PASS=$((PASS+1))
 fi
 
 echo "Persistence tests: $PASS passed, $FAIL failed"

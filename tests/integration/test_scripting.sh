@@ -10,10 +10,10 @@ assert_eq() {
     local got
     got=$($CLI "$@" 2>/dev/null)
     if [ "$got" = "$expected" ]; then
-        ((PASS++))
+        PASS=$((PASS+1))
     else
         echo "FAIL: $* => '$got' != '$expected'"
-        ((FAIL++))
+        FAIL=$((FAIL+1))
     fi
 }
 
@@ -22,10 +22,10 @@ assert_contains() {
     local got
     got=$($CLI "$@" 2>/dev/null)
     if echo "$got" | grep -q "$expected"; then
-        ((PASS++))
+        PASS=$((PASS+1))
     else
         echo "FAIL: $* => '$got' does not contain '$expected'"
-        ((FAIL++))
+        FAIL=$((FAIL+1))
     fi
 }
 
@@ -34,10 +34,10 @@ assert_not_empty() {
     local got
     got=$($CLI "$@" 2>/dev/null)
     if [ -n "$got" ]; then
-        ((PASS++))
+        PASS=$((PASS+1))
     else
         echo "FAIL: $* returned empty"
-        ((FAIL++))
+        FAIL=$((FAIL+1))
     fi
 }
 
@@ -64,18 +64,18 @@ assert_eq "1" EVAL "if tonumber(ARGV[1]) > tonumber(ARGV[2]) then return 1 else 
 assert_not_empty EVAL "return {1, 2, 3}" 0
 
 # EVALSHA (load script then call by sha)
-script_sha=$(SCRIPT LOAD "return 'hello from sha'" 2>/dev/null)
+script_sha=$($CLI SCRIPT LOAD "return 'hello from sha'" 2>/dev/null)
 if [ -n "$script_sha" ]; then
     assert_eq "hello from sha" EVALSHA "$script_sha" 0
 else
     echo "WARN: SCRIPT LOAD returned empty, skipping EVALSHA test"
-    ((PASS++))
+    PASS=$((PASS+1))
 fi
 
 # SCRIPT EXISTS
 if [ -n "$script_sha" ]; then
-    exists=$(SCRIPT EXISTS "$script_sha" 2>/dev/null)
-    [ -n "$exists" ] && ((PASS++)) || { echo "FAIL: SCRIPT EXISTS returned empty"; ((FAIL++)); }
+    exists=$($CLI SCRIPT EXISTS "$script_sha" 2>/dev/null)
+    [ -n "$exists" ] && PASS=$((PASS+1)) || { echo "FAIL: SCRIPT EXISTS returned empty"; FAIL=$((FAIL+1)); }
 fi
 
 # SCRIPT FLUSH

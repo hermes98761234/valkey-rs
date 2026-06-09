@@ -11,10 +11,10 @@ assert_ok_or_int() {
     local got
     got=$(timeout 5 $CLI "$@" 2>/dev/null)
     if echo "$got" | grep -q "OK\|1\|2\|3"; then
-        ((PASS++))
+        PASS=$((PASS+1))
     else
         echo "FAIL: $* => '$got'"
-        ((FAIL++))
+        FAIL=$((FAIL+1))
     fi
 }
 
@@ -22,10 +22,10 @@ assert_not_empty() {
     local got
     got=$(timeout 5 $CLI "$@" 2>/dev/null)
     if [ -n "$got" ]; then
-        ((PASS++))
+        PASS=$((PASS+1))
     else
         echo "FAIL: $* returned empty"
-        ((FAIL++))
+        FAIL=$((FAIL+1))
     fi
 }
 
@@ -34,10 +34,10 @@ assert_contains() {
     local got
     got=$(timeout 5 $CLI "$@" 2>/dev/null)
     if echo "$got" | grep -q "$expected"; then
-        ((PASS++))
+        PASS=$((PASS+1))
     else
         echo "FAIL: $* => '$got' does not contain '$expected'"
-        ((FAIL++))
+        FAIL=$((FAIL+1))
     fi
 }
 
@@ -82,11 +82,11 @@ assert_not_empty ACL GENPASS
 
 # ACL LOG (may be empty if no auth failures)
 log_output=$(timeout 5 $CLI ACL LOG 2>/dev/null)
-[ -n "$log_output" ] && ((PASS++)) || { echo "WARN: ACL LOG returned empty (may be OK)"; ((PASS++)); }
+[ -n "$log_output" ] && PASS=$((PASS+1)) || { echo "WARN: ACL LOG returned empty (may be OK)"; PASS=$((PASS+1)); }
 
 # ACL SAVE
 save_result=$(timeout 5 $CLI ACL SAVE 2>/dev/null)
-[ -n "$save_result" ] && ((PASS++)) || { echo "WARN: ACL SAVE returned empty"; ((PASS++)); }
+[ -n "$save_result" ] && PASS=$((PASS+1)) || { echo "WARN: ACL SAVE returned empty"; PASS=$((PASS+1)); }
 
 echo "ACL tests: $PASS passed, $FAIL failed"
 exit $FAIL

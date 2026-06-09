@@ -10,10 +10,10 @@ assert_eq() {
     local got
     got=$($CLI "$@" 2>/dev/null)
     if [ "$got" = "$expected" ]; then
-        ((PASS++))
+        PASS=$((PASS+1))
     else
         echo "FAIL: $* => '$got' != '$expected'"
-        ((FAIL++))
+        FAIL=$((FAIL+1))
     fi
 }
 
@@ -22,10 +22,10 @@ assert_contains() {
     local got
     got=$($CLI "$@" 2>/dev/null)
     if echo "$got" | grep -q "$expected"; then
-        ((PASS++))
+        PASS=$((PASS+1))
     else
         echo "FAIL: $* => '$got' does not contain '$expected'"
-        ((FAIL++))
+        FAIL=$((FAIL+1))
     fi
 }
 
@@ -34,10 +34,10 @@ assert_not_empty() {
     local got
     got=$($CLI "$@" 2>/dev/null)
     if [ -n "$got" ]; then
-        ((PASS++))
+        PASS=$((PASS+1))
     else
         echo "FAIL: $* returned empty"
-        ((FAIL++))
+        FAIL=$((FAIL+1))
     fi
 }
 
@@ -68,23 +68,23 @@ assert_eq "2" SCARD myset
 # SPOP (returns the popped element or nil if set is empty)
 assert_eq "3" SADD pset "x" "y" "z"
 pset_size=$($CLI SCARD pset 2>/dev/null)
-[ "$pset_size" = "3" ] && ((PASS++)) || true
+[ "$pset_size" = "3" ] && PASS=$((PASS+1)) || true
 popped=$($CLI SPOP pset 2>/dev/null)
 if [ -n "$popped" ]; then
-    ((PASS++))
+    PASS=$((PASS+1))
 else
     echo "WARN: SPOP returned empty (may not be fully implemented)"
-    ((PASS++))
+    PASS=$((PASS+1))
 fi
 
 # SRANDMEMBER
 assert_eq "3" SADD rset "x" "y" "z"
 rand=$($CLI SRANDMEMBER rset 2>/dev/null)
 if [ -n "$rand" ]; then
-    ((PASS++))
+    PASS=$((PASS+1))
 else
     echo "WARN: SRANDMEMBER returned empty (may not be fully implemented)"
-    ((PASS++))
+    PASS=$((PASS+1))
 fi
 
 # SMOVE (returns integer 1 if moved, 0 if not found)
