@@ -34,9 +34,11 @@ use valkey_storage::Store;
 
 pub mod acl;
 pub mod asking;
+pub mod bitmap;
 pub mod cluster;
 pub mod geo;
 pub mod hash;
+pub mod hyperloglog;
 pub mod keys;
 pub mod list;
 pub mod migrate;
@@ -45,6 +47,7 @@ pub mod replication;
 pub mod scripting;
 pub mod server;
 pub mod set;
+pub mod stream;
 pub mod string;
 pub mod transaction;
 pub mod zset;
@@ -114,23 +117,31 @@ pub async fn dispatch_ctx(cmd: Vec<Bytes>, store: Db, ctx: &CommandCtx) -> RespV
         "PING" | "ECHO" | "SELECT" | "DBSIZE" | "FLUSHDB" | "FLUSHALL" | "INFO" | "COMMAND"
         | "CONFIG" | "SAVE" | "BGSAVE" | "BGREWRITEAOF" | "LASTSAVE" | "TIME" | "LATENCY"
         | "SLOWLOG" | "MEMORY" | "CLIENT" | "DEBUG" | "OBJECT" | "RESET" | "REPLCONF"
-        | "REPLICAOF" | "SLAVEOF" => {
+        | "REPLICAOF" | "SLAVEOF" | "SHUTDOWN" | "LOLWUT" | "ROLE" | "SWAPDB" | "HELLO" => {
             server::handle(&cmd, &store, ctx.client.clone(), ctx.config.clone()).await
         }
         "QUIT" => return RespValue::SimpleString("OK".into()),
         "GET" | "SET" | "DEL" | "GETSET" | "MGET" | "MSET" | "MSETNX" | "INCR" | "DECR"
         | "INCRBY" | "DECRBY" | "INCRBYFLOAT" | "APPEND" | "STRLEN" | "GETRANGE" | "SETRANGE"
-        | "SETNX" | "SETEX" | "PSETEX" | "GETEX" | "GETDEL" => string::handle(&cmd, &store).await,
+        | "SETNX" | "SETEX" | "PSETEX" | "GETEX" | "GETDEL" | "LCS" => {
+            string::handle(&cmd, &store).await
+        }
+        "SETBIT" | "GETBIT" | "BITCOUNT" | "BITPOS" | "BITOP" | "BITFIELD" | "BITFIELD_RO" => {
+            bitmap::handle(&cmd, &store)
+        }
+        "PFADD" | "PFCOUNT" | "PFMERGE" => hyperloglog::handle(&cmd, &store),
         "EXISTS" | "TYPE" | "RENAME" | "RENAMENX" | "EXPIRE" | "PEXPIRE" | "EXPIREAT"
         | "PEXPIREAT" | "TTL" | "PTTL" | "PERSIST" | "KEYS" | "SCAN" | "RANDOMKEY" | "MOVE"
         | "COPY" | "DUMP" | "RESTORE" | "SORT" | "SORT_RO" | "SUBSTR" | "EXPIRETIME"
-        | "PEXPIRETIME" | "UNLINK" => keys::handle(&cmd, &store).await,
+        | "PEXPIRETIME" | "UNLINK" | "TOUCH" => keys::handle(&cmd, &store).await,
         "WAIT" => replication::cmd_wait(&cmd[1..]).await,
         "LPUSH" | "RPUSH" | "LPOP" | "RPOP" | "LRANGE" | "LLEN" | "LINDEX" | "LSET" | "LINSERT"
         | "LREM" | "LTRIM" | "LMOVE" | "BLPOP" | "BRPOP" | "LMPOP" | "BLMPOP" | "BLMOVE"
-        | "LPOS" => list::handle(&cmd, &store).await,
+        | "LPOS" | "LPUSHX" | "RPUSHX" | "RPOPLPUSH" | "BRPOPLPUSH" => {
+            list::handle(&cmd, &store).await
+        }
         "HSET" | "HGET" | "HMGET" | "HMSET" | "HGETALL" | "HDEL" | "HEXISTS" | "HLEN" | "HKEYS"
-        | "HVALS" | "HINCRBY" | "HINCRBYFLOAT" | "HSCAN" | "HRANDFIELD" => {
+        | "HVALS" | "HINCRBY" | "HINCRBYFLOAT" | "HSCAN" | "HRANDFIELD" | "HSETNX" | "HSTRLEN" => {
             hash::handle(&cmd, &store)
         }
         "SADD" | "SMEMBERS" | "SISMEMBER" | "SMISMEMBER" | "SCARD" | "SREM" | "SPOP"
@@ -203,7 +214,24 @@ pub async fn dispatch_ctx(cmd: Vec<Bytes>, store: Db, ctx: &CommandCtx) -> RespV
                 "ZDIFF" => zset::zdiff(&store, args),
                 "ZINTER" => zset::zinter(&store, args),
                 "ZUNION" => zset::zunion(&store, args),
+                "ZINTERCARD" => zset::zintercard(&store, args),
+                "ZREVRANGEBYLEX" => zset::zrevrangebylex(&store, args),
                 "ZMPOP" => zset::zmpop(&store, args),
+                "XADD" => stream::xadd(&store, args),
+                "XREAD" => stream::xread(&store, args),
+                "XRANGE" => stream::xrange(&store, args),
+                "XREVRANGE" => stream::xrevrange(&store, args),
+                "XLEN" => stream::xlen(&store, args),
+                "XTRIM" => stream::xtrim(&store, args),
+                "XDEL" => stream::xdel(&store, args),
+                "XINFO" => stream::xinfo(&store, args),
+                "XGROUP" => stream::xgroup(&store, args),
+                "XREADGROUP" => stream::xreadgroup(&store, args),
+                "XACK" => stream::xack(&store, args),
+                "XCLAIM" => stream::xclaim(&store, args),
+                "XPENDING" => stream::xpending(&store, args),
+                "XAUTOCLAIM" => stream::xautoclaim(&store, args),
+                "XSETID" => stream::xsetid(&store, args),
                 "PSYNC" => Ok(replication::cmd_psync(&cmd[1..], &store).await),
                 _ => {
                     // Check if a loaded module handles this command

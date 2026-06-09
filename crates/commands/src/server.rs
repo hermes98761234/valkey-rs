@@ -472,34 +472,27 @@ pub async fn handle(
         "RESET" => cmd_reset(args, _client.clone()).await,
         "SHUTDOWN" => cmd_shutdown(args).await,
         "LOLWUT" => cmd_lolwut(args).await,
-        _ => {
-            // All other commands require at least one argument
-            if args.len() < 2 {
-                return RespValue::Error(
-                    format!("ERR wrong number of arguments for '{}' command", cmd_name).into(),
-                );
-            }
-            match cmd_name.as_str() {
-                "ECHO" => cmd_echo(args).await,
-                "SELECT" => cmd_select(args, _client).await,
-                "INFO" => cmd_info(args).await,
-                "COMMAND" => cmd_command(args, store, _client, config).await,
-                "CONFIG" => cmd_config(args, config, store).await,
-                "SAVE" => cmd_save(args, store, config).await,
-                "BGSAVE" => cmd_bgsave(args, store, config).await,
-                "BGREWRITEAOF" => cmd_bgrewriteaof(args, store, config).await,
-                "LATENCY" => cmd_latency(args).await,
-                "SLOWLOG" => cmd_slowlog(args).await,
-                "MEMORY" => cmd_memory(args, store).await,
-                "CLIENT" => cmd_client(args, _client).await,
-                "DEBUG" => cmd_debug(args).await,
-                "OBJECT" => cmd_object(args, store).await,
-                "REPLCONF" => crate::replication::handle_replconf(args).await,
-                "REPLICAOF" => crate::replication::cmd_replicaof(args, store).await,
-                "SLAVEOF" => crate::replication::cmd_replicaof(args, store).await,
-                _ => RespValue::Error(format!("ERR unknown command `{}`", cmd_name).into()),
-            }
-        }
+        "ROLE" => cmd_role(args).await,
+        "SWAPDB" => cmd_swapdb(args).await,
+        "HELLO" => cmd_hello(args, _client.clone()).await,
+        "ECHO" => cmd_echo(args).await,
+        "INFO" => cmd_info(args).await,
+        "SELECT" => cmd_select(args, _client.clone()).await,
+        "COMMAND" => cmd_command(args, store, _client.clone(), config.clone()).await,
+        "CONFIG" => cmd_config(args, config, store).await,
+        "SAVE" => cmd_save(args, store, config).await,
+        "BGSAVE" => cmd_bgsave(args, store, config).await,
+        "BGREWRITEAOF" => cmd_bgrewriteaof(args, store, config).await,
+        "LATENCY" => cmd_latency(args).await,
+        "SLOWLOG" => cmd_slowlog(args).await,
+        "MEMORY" => cmd_memory(args, store).await,
+        "CLIENT" => cmd_client(args, _client).await,
+        "DEBUG" => cmd_debug(args).await,
+        "OBJECT" => cmd_object(args, store).await,
+        "REPLCONF" => crate::replication::handle_replconf(args).await,
+        "REPLICAOF" => crate::replication::cmd_replicaof(args, store).await,
+        "SLAVEOF" => crate::replication::cmd_replicaof(args, store).await,
+        _ => RespValue::Error(format!("ERR unknown command `{}`", cmd_name).into()),
     }
 }
 
@@ -2807,6 +2800,103 @@ async fn cmd_lolwut(args: &[Bytes]) -> RespValue {
   fun ASCII art. Enjoy!"#;
 
     RespValue::bulk(Bytes::from(art))
+}
+
+// ---------------------------------------------------------------------------
+// ROLE
+// ---------------------------------------------------------------------------
+
+async fn cmd_role(args: &[Bytes]) -> RespValue {
+    if !args.is_empty() {
+        return RespValue::Error("ERR wrong number of arguments for 'role' command".into());
+    }
+    // Mirrors the INFO replication section, which always reports master.
+    RespValue::array(vec![
+        RespValue::bulk(Bytes::from("master")),
+        RespValue::int(0),
+        RespValue::array(vec![]),
+    ])
+}
+
+// ---------------------------------------------------------------------------
+// SWAPDB
+// ---------------------------------------------------------------------------
+
+async fn cmd_swapdb(args: &[Bytes]) -> RespValue {
+    if args.len() != 2 {
+        return RespValue::Error("ERR wrong number of arguments for 'swapdb' command".into());
+    }
+    let first: Result<usize, _> = std::str::from_utf8(&args[0]).unwrap_or("").parse();
+    if first.is_err() {
+        return RespValue::Error("ERR invalid first DB index".into());
+    }
+    let second: Result<usize, _> = std::str::from_utf8(&args[1]).unwrap_or("").parse();
+    if second.is_err() {
+        return RespValue::Error("ERR invalid second DB index".into());
+    }
+    // Single keyspace: swapping any two indexes is a no-op, like SELECT.
+    RespValue::ok()
+}
+
+// ---------------------------------------------------------------------------
+// HELLO [protover [AUTH username password] [SETNAME clientname]]
+// ---------------------------------------------------------------------------
+
+async fn cmd_hello(args: &[Bytes], client: Arc<RwLock<ClientCtx>>) -> RespValue {
+    let mut proto = 2i64;
+    let mut i = 0;
+    if !args.is_empty() {
+        let s = std::str::from_utf8(&args[0]).unwrap_or("");
+        // The first argument, when present, must be the protocol version.
+        match s.parse::<i64>() {
+            Ok(v) if v == 2 || v == 3 => {
+                proto = v;
+                i = 1;
+            }
+            _ => return RespValue::Error("NOPROTO unsupported protocol version".into()),
+        }
+    }
+    while i < args.len() {
+        let opt = match std::str::from_utf8(&args[i]) {
+            Ok(s) => s.to_ascii_uppercase(),
+            Err(_) => return RespValue::Error("ERR syntax error in HELLO".into()),
+        };
+        match opt.as_str() {
+            "AUTH" if i + 2 < args.len() => {
+                let reply = crate::acl::cmd_auth(&args[i + 1..i + 3], client.clone()).await;
+                if matches!(reply, RespValue::Error(_)) {
+                    return reply;
+                }
+                i += 3;
+            }
+            "SETNAME" if i + 1 < args.len() => {
+                match std::str::from_utf8(&args[i + 1]) {
+                    Ok(name) => client.write().unwrap().name = Some(name.to_string()),
+                    Err(_) => return RespValue::Error("ERR syntax error in HELLO".into()),
+                }
+                i += 2;
+            }
+            _ => return RespValue::Error("ERR syntax error in HELLO".into()),
+        }
+    }
+    let id = client.read().unwrap().id;
+    // Flat key-value array (RESP2 shape); RESP3 clients accept it as well.
+    RespValue::array(vec![
+        RespValue::bulk(Bytes::from("server")),
+        RespValue::bulk(Bytes::from("valkey")),
+        RespValue::bulk(Bytes::from("version")),
+        RespValue::bulk(Bytes::from(env!("CARGO_PKG_VERSION"))),
+        RespValue::bulk(Bytes::from("proto")),
+        RespValue::int(proto),
+        RespValue::bulk(Bytes::from("id")),
+        RespValue::int(id),
+        RespValue::bulk(Bytes::from("mode")),
+        RespValue::bulk(Bytes::from("standalone")),
+        RespValue::bulk(Bytes::from("role")),
+        RespValue::bulk(Bytes::from("master")),
+        RespValue::bulk(Bytes::from("modules")),
+        RespValue::array(vec![]),
+    ])
 }
 
 // ---------------------------------------------------------------------------

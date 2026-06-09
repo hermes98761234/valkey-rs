@@ -18,6 +18,10 @@ pub async fn handle(a: &[Bytes], s: &Arc<Store>) -> RespValue {
     match cmd.as_str() {
         "LPUSH" => lp(&a[1..], s).await,
         "RPUSH" => rp(&a[1..], s).await,
+        "LPUSHX" => pushx(&a[1..], s, true).await,
+        "RPUSHX" => pushx(&a[1..], s, false).await,
+        "RPOPLPUSH" => rpoplpush(&a[1..], s).await,
+        "BRPOPLPUSH" => brpoplpush(&a[1..], s).await,
         "LPOP" => lpo(&a[1..], s).await,
         "RPOP" => rpo(&a[1..], s).await,
         "LRANGE" => lr(&a[1..], s).await,
@@ -36,6 +40,65 @@ pub async fn handle(a: &[Bytes], s: &Arc<Store>) -> RespValue {
         "LPOS" => lpos(&a[1..], s).await,
         _ => RespValue::Error(format!("ERR unknown command `{}`", cmd)),
     }
+}
+
+// ---------------------------------------------------------------------------
+// LPUSHX / RPUSHX — push only when the key already holds a list
+// ---------------------------------------------------------------------------
+async fn pushx(a: &[Bytes], s: &Arc<Store>, left: bool) -> RespValue {
+    if a.len() < 2 {
+        let name = if left { "lpushx" } else { "rpushx" };
+        return RespValue::Error(format!(
+            "ERR wrong number of arguments for '{}' command",
+            name
+        ));
+    }
+    {
+        match s.get(&a[0]) {
+            Some(e) if e.data.is_list_type() => {}
+            Some(_) => {
+                return RespValue::Error(
+                    "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
+                )
+            }
+            None => return RespValue::Integer(0),
+        }
+    }
+    if left {
+        lp(a, s).await
+    } else {
+        rp(a, s).await
+    }
+}
+
+// ---------------------------------------------------------------------------
+// RPOPLPUSH / BRPOPLPUSH — legacy aliases of LMOVE src dst RIGHT LEFT
+// ---------------------------------------------------------------------------
+async fn rpoplpush(a: &[Bytes], s: &Arc<Store>) -> RespValue {
+    if a.len() != 2 {
+        return RespValue::Error("ERR wrong number of arguments for 'rpoplpush' command".into());
+    }
+    let v = vec![
+        a[0].clone(),
+        a[1].clone(),
+        Bytes::from_static(b"RIGHT"),
+        Bytes::from_static(b"LEFT"),
+    ];
+    lmo(&v, s).await
+}
+
+async fn brpoplpush(a: &[Bytes], s: &Arc<Store>) -> RespValue {
+    if a.len() != 3 {
+        return RespValue::Error("ERR wrong number of arguments for 'brpoplpush' command".into());
+    }
+    let v = vec![
+        a[0].clone(),
+        a[1].clone(),
+        Bytes::from_static(b"RIGHT"),
+        Bytes::from_static(b"LEFT"),
+        a[2].clone(),
+    ];
+    blmove(&v, s).await
 }
 
 // ---------------------------------------------------------------------------

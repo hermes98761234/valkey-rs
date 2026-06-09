@@ -418,6 +418,43 @@ pub fn handle(cmd: &[Bytes], store: &Arc<Store>) -> RespValue {
                 None => RespValue::null_bulk(),
             }
         }
+        "HSETNX" => {
+            if args.len() != 3 {
+                return RespValue::Error(
+                    "ERR wrong number of arguments for 'hsetnx' command".into(),
+                );
+            }
+            let mut e = store
+                .keyspace
+                .entry(args[0].clone())
+                .or_insert_with(|| Entry::new(DataType::Hash(HashMap::new()), None));
+            let h = match &mut e.data {
+                DataType::Hash(h) => h,
+                _ => return wrongtype(),
+            };
+            if h.contains_key(&args[1]) {
+                RespValue::int(0)
+            } else {
+                h.insert(args[1].clone(), args[2].clone());
+                RespValue::int(1)
+            }
+        }
+        "HSTRLEN" => {
+            if args.len() != 2 {
+                return RespValue::Error(
+                    "ERR wrong number of arguments for 'hstrlen' command".into(),
+                );
+            }
+            match store.get(&args[0]) {
+                Some(entry) => match &entry.data {
+                    DataType::Hash(h) => {
+                        RespValue::int(h.get(&args[1]).map(|v| v.len() as i64).unwrap_or(0))
+                    }
+                    _ => wrongtype(),
+                },
+                None => RespValue::int(0),
+            }
+        }
         _ => RespValue::Error(format!("ERR unknown command '{}'", name).into()),
     }
 }

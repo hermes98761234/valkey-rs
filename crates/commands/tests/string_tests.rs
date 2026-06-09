@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use valkey_commands::string;
 use valkey_proto::RespValue;
-use valkey_storage::{DataType, Entry, Store};
+use valkey_storage::Store;
 
 fn test_store() -> Arc<Store> {
     Store::new()

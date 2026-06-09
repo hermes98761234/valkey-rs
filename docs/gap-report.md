@@ -2,6 +2,42 @@
 
 Generated: 2026-06-05
 
+> **Update 2026-06-09:** Many entries below are out of date. Since this report
+> was generated the following gaps were closed:
+>
+> - **Streams**: the entire `stream.rs` module was unreachable (never declared
+>   in `lib.rs`); it is now compiled, fixed, and dispatched. XADD, XREAD,
+>   XRANGE, XREVRANGE, XLEN, XTRIM, XDEL, XINFO (incl. FULL), XGROUP,
+>   XREADGROUP, XACK, XCLAIM, XPENDING, XAUTOCLAIM all work, and XSETID was
+>   added.
+> - **Bitmap family (new)**: SETBIT, GETBIT, BITCOUNT (BYTE/BIT), BITPOS
+>   (BYTE/BIT), BITOP (AND/OR/XOR/NOT), BITFIELD, BITFIELD_RO.
+> - **HyperLogLog (new)**: PFADD, PFCOUNT (multi-key union), PFMERGE.
+> - **Strings**: LCS (plain/LEN/IDX/MINMATCHLEN/WITHMATCHLEN); GETEX now
+>   supports all options; SUBSTR exists.
+> - **Hashes**: HSETNX, HSTRLEN.
+> - **Lists**: LPUSHX, RPUSHX, RPOPLPUSH, BRPOPLPUSH (plus the previously
+>   added LMPOP/BLMPOP/BLMOVE/LPOS).
+> - **Sorted sets**: ZINTERCARD, ZREVRANGEBYLEX (plus the previously added
+>   ZDIFF/ZINTER/ZUNION/ZMPOP/BZMPOP/BZPOPMIN/BZPOPMAX). Also fixed: lex max
+>   bounds in ZRANGEBYLEX/ZLEXCOUNT/ZREMRANGEBYLEX/ZRANGESTORE were applied
+>   with lower-bound semantics, so finite `[x` / `(x` max bounds returned
+>   wrong results.
+> - **Keys**: TOUCH (EXPIRETIME/PEXPIRETIME/SORT_RO/DUMP/RESTORE already
+>   landed earlier).
+> - **Server**: HELLO, ROLE, SWAPDB added; SHUTDOWN and LOLWUT were
+>   implemented but unrouted, now dispatched. Bare INFO/ECHO/COMMAND/SAVE,
+>   CLIENT LIST, MEMORY DOCTOR, CONFIG RESETSTAT etc. no longer rejected by a
+>   faulty arity guard. The listen port is configurable via the `PORT` env
+>   var.
+> - **Scripting**: EVAL/EVALSHA/SCRIPT are implemented via mlua (the table
+>   below predates this).
+>
+> Remaining known gaps: true blocking semantics for BLPOP/BRPOP, pub/sub
+> push-mode wiring in the connection handler (handlers exist but the server
+> never enters subscribe mode), cluster mode, FUNCTION/FCALL, and the newer
+> hash-field-TTL family (HEXPIRE etc.).
+
 Legend:
 - ✅ = Fully implemented
 - ⚠️ = Partially implemented (notes included)

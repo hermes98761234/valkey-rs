@@ -69,11 +69,22 @@ impl LexBound {
             _ => None,
         }
     }
+    /// Member satisfies this bound used as a lower (min) bound.
     fn contains(&self, member: &Bytes) -> bool {
         match self {
             LexBound::Inclusive(v) => member >= v,
             LexBound::Exclusive(v) => member > v,
-            _ => true,
+            LexBound::NegInfinity => true,
+            LexBound::PosInfinity => false,
+        }
+    }
+    /// Member satisfies this bound used as an upper (max) bound.
+    fn contains_upper(&self, member: &Bytes) -> bool {
+        match self {
+            LexBound::Inclusive(v) => member <= v,
+            LexBound::Exclusive(v) => member < v,
+            LexBound::NegInfinity => false,
+            LexBound::PosInfinity => true,
         }
     }
 }
@@ -201,7 +212,7 @@ fn zset_range_by_lex(
     all.sort();
     let result: Vec<Bytes> = all
         .into_iter()
-        .filter(|m| min.contains(m) && max.contains(m))
+        .filter(|m| min.contains(m) && max.contains_upper(m))
         .collect();
     if offset >= result.len() {
         return Vec::new();
@@ -728,6 +739,126 @@ pub fn zrangebylex(db: &Db, args: &[Bytes]) -> Result<RespValue, String> {
         }
         None => Ok(RespValue::Array(Some(vec![]))),
     }
+}
+
+// ZREVRANGEBYLEX key max min [LIMIT offset count]
+pub fn zrevrangebylex(db: &Db, args: &[Bytes]) -> Result<RespValue, String> {
+    if args.len() < 3 {
+        return Err("ERR wrong number of arguments for 'zrevrangebylex' command".into());
+    }
+    let key = str_from_bytes(&args[0])?;
+    let max = LexBound::from_str(str_from_bytes(&args[1])?)
+        .ok_or("ERR min or max not valid string range item")?;
+    let min = LexBound::from_str(str_from_bytes(&args[2])?)
+        .ok_or("ERR min or max not valid string range item")?;
+    let mut idx = 3;
+    let mut lo: usize = 0;
+    let mut lc: usize = usize::MAX;
+    while idx < args.len() {
+        match str_from_bytes(&args[idx])?.to_ascii_uppercase().as_str() {
+            "LIMIT" => {
+                if idx + 2 >= args.len() {
+                    return Err("ERR syntax error".into());
+                }
+                lo = str_from_bytes(&args[idx + 1])?
+                    .parse()
+                    .map_err(|_| "ERR value is not an integer or out of range")?;
+                lc = str_from_bytes(&args[idx + 2])?
+                    .parse()
+                    .map_err(|_| "ERR value is not an integer or out of range")?;
+                idx += 3;
+            }
+            _ => return Err("ERR syntax error".into()),
+        }
+    }
+    match get_zset(db, key) {
+        Some(zset) => {
+            // Collect the full ascending range, reverse it, then apply LIMIT.
+            let mut m = zset_range_by_lex(&zset, &min, &max, 0, usize::MAX);
+            m.reverse();
+            let out: Vec<Bytes> = if lo >= m.len() {
+                Vec::new()
+            } else {
+                let end = if lc == usize::MAX {
+                    m.len()
+                } else {
+                    (lo + lc).min(m.len())
+                };
+                m[lo..end].to_vec()
+            };
+            Ok(RespValue::Array(Some(
+                out.into_iter()
+                    .map(|x| RespValue::BulkString(Some(x)))
+                    .collect(),
+            )))
+        }
+        None => Ok(RespValue::Array(Some(vec![]))),
+    }
+}
+
+// ZINTERCARD numkeys key [key ...] [LIMIT limit]
+pub fn zintercard(db: &Db, args: &[Bytes]) -> Result<RespValue, String> {
+    if args.len() < 2 {
+        return Err("ERR wrong number of arguments for 'zintercard' command".into());
+    }
+    let numkeys: usize = str_from_bytes(&args[0])?
+        .parse()
+        .map_err(|_| "ERR numkeys should be greater than 0")?;
+    if numkeys == 0 {
+        return Err("ERR numkeys should be greater than 0".into());
+    }
+    if args.len() < 1 + numkeys {
+        return Err("ERR Number of keys can't be greater than number of args".into());
+    }
+    let mut limit: usize = usize::MAX;
+    let mut idx = 1 + numkeys;
+    while idx < args.len() {
+        match str_from_bytes(&args[idx])?.to_ascii_uppercase().as_str() {
+            "LIMIT" => {
+                if idx + 1 >= args.len() {
+                    return Err("ERR syntax error".into());
+                }
+                let l: i64 = str_from_bytes(&args[idx + 1])?
+                    .parse()
+                    .map_err(|_| "ERR LIMIT can't be negative")?;
+                if l < 0 {
+                    return Err("ERR LIMIT can't be negative".into());
+                }
+                limit = if l == 0 { usize::MAX } else { l as usize };
+                idx += 2;
+            }
+            _ => return Err("ERR syntax error".into()),
+        }
+    }
+    let mut sets: Vec<ZSetData> = Vec::with_capacity(numkeys);
+    for i in 0..numkeys {
+        match get_zset(db, str_from_bytes(&args[1 + i])?) {
+            Some(z) => sets.push(z),
+            // Any empty input makes the intersection empty.
+            None => return Ok(RespValue::Integer(0)),
+        }
+    }
+    // Iterate over the smallest set for efficiency.
+    let smallest = sets
+        .iter()
+        .enumerate()
+        .min_by_key(|(_, z)| z.len())
+        .map(|(i, _)| i)
+        .unwrap_or(0);
+    let mut count = 0usize;
+    for m in sets[smallest].members.keys() {
+        if sets
+            .iter()
+            .enumerate()
+            .all(|(i, z)| i == smallest || z.members.contains_key(m))
+        {
+            count += 1;
+            if count >= limit {
+                break;
+            }
+        }
+    }
+    Ok(RespValue::Integer(count as i64))
 }
 
 // ZCOUNT key min max

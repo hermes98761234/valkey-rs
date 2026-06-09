@@ -41,6 +41,7 @@ pub async fn handle(args: &[Bytes], store: &Arc<Store>) -> RespValue {
         "EXPIRETIME" => cmd_expiretime(&args[1..], store).await,
         "PEXPIRETIME" => cmd_pexpiretime(&args[1..], store).await,
         "UNLINK" => cmd_unlink(&args[1..], store).await,
+        "TOUCH" => cmd_touch(&args[1..], store).await,
         _ => RespValue::Error(format!("ERR unknown command `{}`", cmd)),
     }
 }
@@ -49,6 +50,22 @@ async fn cmd_exists(args: &[Bytes], store: &Arc<Store>) -> RespValue {
         return RespValue::Error("ERR wrong number of arguments for 'exists' command".into());
     }
     RespValue::Integer(args.iter().filter(|k| store.exists(k)).count() as i64)
+}
+async fn cmd_touch(args: &[Bytes], store: &Arc<Store>) -> RespValue {
+    if args.is_empty() {
+        return RespValue::Error("ERR wrong number of arguments for 'touch' command".into());
+    }
+    let mut touched = 0i64;
+    for key in args {
+        if !store.exists(key) {
+            continue;
+        }
+        if let Some(mut entry) = store.keyspace.get_mut(key) {
+            entry.touch();
+            touched += 1;
+        }
+    }
+    RespValue::Integer(touched)
 }
 async fn cmd_type(args: &[Bytes], store: &Arc<Store>) -> RespValue {
     if args.len() != 1 {

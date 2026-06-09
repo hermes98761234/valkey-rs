@@ -35,6 +35,7 @@ pub async fn handle(args: &[Bytes], store: &Arc<Store>) -> RespValue {
         "PSETEX" => cmd_psetex(&args[1..], store).await,
         "GETEX" => cmd_getex(&args[1..], store).await,
         "GETDEL" => cmd_getdel(&args[1..], store).await,
+        "LCS" => cmd_lcs(&args[1..], store).await,
         _ => RespValue::Error(format!("ERR unknown command `{}`", cmd)),
     }
 }
@@ -694,6 +695,153 @@ async fn cmd_incrby_internal(key: &Bytes, increment: i64, store: &Arc<Store>) ->
             RespValue::Integer(increment)
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// LCS key1 key2 [LEN] [IDX] [MINMATCHLEN len] [WITHMATCHLEN]
+// ---------------------------------------------------------------------------
+async fn cmd_lcs(args: &[Bytes], store: &Arc<Store>) -> RespValue {
+    if args.len() < 2 {
+        return RespValue::Error("ERR wrong number of arguments for 'lcs' command".into());
+    }
+    let mut want_len = false;
+    let mut want_idx = false;
+    let mut with_match_len = false;
+    let mut min_match_len: usize = 0;
+    let mut i = 2;
+    while i < args.len() {
+        let opt = match std::str::from_utf8(&args[i]) {
+            Ok(s) => s.to_ascii_uppercase(),
+            Err(_) => return RespValue::Error("ERR syntax error".into()),
+        };
+        match opt.as_str() {
+            "LEN" => want_len = true,
+            "IDX" => want_idx = true,
+            "WITHMATCHLEN" => with_match_len = true,
+            "MINMATCHLEN" => {
+                i += 1;
+                if i >= args.len() {
+                    return RespValue::Error("ERR syntax error".into());
+                }
+                min_match_len = match std::str::from_utf8(&args[i])
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+                {
+                    Some(v) => v,
+                    None => {
+                        return RespValue::Error(
+                            "ERR value is not an integer or out of range".into(),
+                        )
+                    }
+                };
+            }
+            _ => return RespValue::Error("ERR syntax error".into()),
+        }
+        i += 1;
+    }
+    if want_len && want_idx {
+        return RespValue::Error(
+            "ERR If you want both the length and indexes, please just use IDX.".into(),
+        );
+    }
+    let fetch = |key: &Bytes| -> Result<Bytes, RespValue> {
+        match store.get(key) {
+            Some(entry) => match &entry.data {
+                DataType::String(s) => Ok(s.clone()),
+                _ => Err(RespValue::Error(
+                    "WRONGTYPE Operation against a key holding the wrong kind of value".into(),
+                )),
+            },
+            None => Ok(Bytes::new()),
+        }
+    };
+    let a = match fetch(&args[0]) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    let b = match fetch(&args[1]) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    let (la, lb) = (a.len(), b.len());
+    // Guard against the O(n*m) table blowing up memory.
+    if la.saturating_mul(lb) > 64 * 1024 * 1024 {
+        return RespValue::Error(
+            "ERR Insufficient memory, failed allocating transient memory for LCS".into(),
+        );
+    }
+    let w = lb + 1;
+    let mut dp = vec![0u32; (la + 1) * w];
+    for ai in 1..=la {
+        for bi in 1..=lb {
+            dp[ai * w + bi] = if a[ai - 1] == b[bi - 1] {
+                dp[(ai - 1) * w + (bi - 1)] + 1
+            } else {
+                dp[(ai - 1) * w + bi].max(dp[ai * w + (bi - 1)])
+            };
+        }
+    }
+    let lcs_len = dp[la * w + lb] as i64;
+    if want_len {
+        return RespValue::Integer(lcs_len);
+    }
+    if !want_idx {
+        let mut out = Vec::with_capacity(lcs_len as usize);
+        let (mut ai, mut bi) = (la, lb);
+        while ai > 0 && bi > 0 {
+            if a[ai - 1] == b[bi - 1] {
+                out.push(a[ai - 1]);
+                ai -= 1;
+                bi -= 1;
+            } else if dp[(ai - 1) * w + bi] >= dp[ai * w + (bi - 1)] {
+                ai -= 1;
+            } else {
+                bi -= 1;
+            }
+        }
+        out.reverse();
+        return RespValue::BulkString(Some(Bytes::from(out)));
+    }
+    // IDX: collect contiguous match runs while backtracking (last match first).
+    let mut matches = Vec::new();
+    let (mut ai, mut bi) = (la, lb);
+    while ai > 0 && bi > 0 {
+        if a[ai - 1] == b[bi - 1] {
+            let (a_end, b_end) = (ai - 1, bi - 1);
+            let mut run = 0usize;
+            while ai > 0 && bi > 0 && a[ai - 1] == b[bi - 1] {
+                ai -= 1;
+                bi -= 1;
+                run += 1;
+            }
+            if run >= min_match_len {
+                let mut m = vec![
+                    RespValue::array(vec![
+                        RespValue::Integer(ai as i64),
+                        RespValue::Integer(a_end as i64),
+                    ]),
+                    RespValue::array(vec![
+                        RespValue::Integer(bi as i64),
+                        RespValue::Integer(b_end as i64),
+                    ]),
+                ];
+                if with_match_len {
+                    m.push(RespValue::Integer(run as i64));
+                }
+                matches.push(RespValue::array(m));
+            }
+        } else if dp[(ai - 1) * w + bi] >= dp[ai * w + (bi - 1)] {
+            ai -= 1;
+        } else {
+            bi -= 1;
+        }
+    }
+    RespValue::array(vec![
+        RespValue::BulkString(Some(Bytes::from("matches"))),
+        RespValue::array(matches),
+        RespValue::BulkString(Some(Bytes::from("len"))),
+        RespValue::Integer(lcs_len),
+    ])
 }
 
 fn normalize_index(index: i64, len: i64) -> i64 {
